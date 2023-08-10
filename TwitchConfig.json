@@ -1,0 +1,31 @@
+{
+	"name": "Twitch (Beta)",
+	"description": "One of the biggest livestreaming platforms, owned by Amazon.",
+	"author": "FUTO",
+	"authorUrl": "https://futo.org",
+	
+	"sourceUrl": "https://autoupdate.unkto.com/sources/Twitch/TwitchConfig.json",
+	"repositoryUrl": "https://futo.org",
+	"scriptUrl": "./TwitchScript.js",
+	"version": 6,
+
+	"iconUrl": "./twitch.png",
+	"id": "c0f315f9-0992-4508-a061-f2738724c331",
+
+	"scriptSignature": "",
+	"scriptPublicKey": "",
+	"packages": ["Http"],
+	
+	"allowEval": false,
+	"allowUrls": [
+		"gql.twitch.tv",
+		"twitch.tv",
+		"usher.ttvnw.net"
+	],
+	
+	"authentication": {
+		"userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.3",
+		"loginUrl": "https://www.twitch.tv/login",
+		"headersToFind": ["Authorization"]
+	}
+}
