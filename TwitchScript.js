@@ -3,6 +3,7 @@ const BASE_URL = 'https://www.twitch.tv/'
 const CLIENT_ID = 'ue6666qo983tsx6so1t0vnawi233wa' // old: kimne78kx3ncx6brgo4mv6wki5h1ko
 const GQL_URL = 'https://gql.twitch.tv/gql#origin=twilight'
 const PLATFORM = 'Twitch'
+const PLATFORM_CLAIMTYPE = 14;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
 
 //* Global Variables
@@ -128,7 +129,7 @@ source.getChannel = function (url) {
     const shell = shell_resp.data.userOrError
 
     return new PlatformChannel({
-        id: new PlatformID(PLATFORM, user.id, config.id),
+        id: new PlatformID(PLATFORM, user.id, config.id, PLATFORM_CLAIMTYPE),
         name: user.displayName,
         thumbnail: user.profileImageURL,
         banner: shell.bannerImageURL,
@@ -285,7 +286,7 @@ function getSavedVideo(url) {
         name: vm.video.title,
         thumbnails: new Thumbnails([new Thumbnail(vm.video.previewThumbnailURL, 0)]),
         author: new PlatformAuthorLink(
-            new PlatformID(PLATFORM, cvc.owner.id, config.id),
+            new PlatformID(PLATFORM, cvc.owner.id, config.id, PLATFORM_CLAIMTYPE),
             cvc.owner.login,
             BASE_URL + cvc.owner.login,
             cvc.owner.profileImageURL
@@ -402,7 +403,7 @@ function getLiveVideo(url, video_details = true) {
             new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-1280x720.jpg`, 720),
             new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-854x480.jpg`, 480),
         ]),
-        author: new PlatformAuthorLink(new PlatformID(PLATFORM, sm.channel.id, config.id), login, url, sm.profileImageURL),
+        author: new PlatformAuthorLink(new PlatformID(PLATFORM, sm.channel.id, config.id, PLATFORM_CLAIMTYPE), login, url, sm.profileImageURL),
         uploadDate: parseInt(new Date(ul.stream.createdAt).getTime() / 1000),
         // uploadDate: parseInt(new Date().getTime() / 1000),
         duration: 0,
@@ -788,7 +789,7 @@ function getHomePagerPopular(context) {
             name: n.title,
             thumbnails: new Thumbnails([new Thumbnail(n.previewImageURL, 0)]),
             author: new PlatformAuthorLink(
-                new PlatformID(PLATFORM, n.broadcaster.id, config.id),
+                new PlatformID(PLATFORM, n.broadcaster.id, config.id, PLATFORM_CLAIMTYPE),
                 n.broadcaster.login,
                 BASE_URL + n.broadcaster.login,
                 n.broadcaster.profileImageURL
@@ -868,7 +869,7 @@ function personalSectionToPlatformVideo(ps) {
         id: new PlatformID(PLATFORM, ps.content.id, config.id),
         name: ps.content.broadcaster.broadcastSettings.title,
         thumbnails: new Thumbnails([new Thumbnail(ps.content.previewImageURL, 0)]),
-        author: new PlatformAuthorLink(new PlatformID(PLATFORM, ps.user.id, config.id), ps.user.displayName, BASE_URL + ps.user.login, ps.user.profileImageURL),
+        author: new PlatformAuthorLink(new PlatformID(PLATFORM, ps.user.id, config.id, PLATFORM_CLAIMTYPE), ps.user.displayName, BASE_URL + ps.user.login, ps.user.profileImageURL),
         uploadDate: parseInt(new Date().getTime() / 1000),
         duration: 0,
         viewCount: ps.content.viewersCount,
@@ -937,7 +938,7 @@ function getChannelPager(context) {
             name: edge.node.title,
             thumbnails: new Thumbnails([new Thumbnail(edge.node.previewThumbnailURL, 0)]),
             author: new PlatformAuthorLink(
-                new PlatformID(PLATFORM, edge.node.owner.id, config.id),
+                new PlatformID(PLATFORM, edge.node.owner.id, config.id, PLATFORM_CLAIMTYPE),
                 edge.node.owner.displayName,
                 BASE_URL + edge.node.owner.login,
                 edge.node.owner.profileImageURL
@@ -1177,7 +1178,7 @@ function searchLiveToPlatformVideo(sl) {
         name: sl.stream.broadcaster.broadcastSettings.title,
         thumbnails: new Thumbnails([new Thumbnail(sl.stream.previewImageURL, 0)]),
         author: new PlatformAuthorLink(
-            new PlatformID(PLATFORM, sl.stream.broadcaster.id, config.id),
+            new PlatformID(PLATFORM, sl.stream.broadcaster.id, config.id, PLATFORM_CLAIMTYPE),
             sl.stream.broadcaster.displayName,
             BASE_URL + sl.stream.broadcaster.login,
             sl.stream.broadcaster.profileImageURL || ''
@@ -1200,7 +1201,7 @@ function searchVideoToPlatformVideo(sv) {
         id: new PlatformID(PLATFORM, sv.id, config.id),
         name: sv.title,
         thumbnails: new Thumbnails([new Thumbnail(sv.previewThumbnailURL, 0)]),
-        author: new PlatformAuthorLink(new PlatformID(PLATFORM, sv.owner.id, config.id), sv.owner.displayName, BASE_URL + sv.owner.login, ''),
+        author: new PlatformAuthorLink(new PlatformID(PLATFORM, sv.owner.id, config.id, PLATFORM_CLAIMTYPE), sv.owner.displayName, BASE_URL + sv.owner.login, ''),
         uploadDate: parseInt(new Date(sv.createdAt).getTime() / 1000),
         duration: parseInt(sv.lengthSeconds),
         viewCount: sv.viewCount,
@@ -1219,7 +1220,7 @@ function searchTaggedToPlatformVideo(st) {
         id: new PlatformID(PLATFORM, st.stream.id, config.id),
         name: st.broadcastSettings.title,
         thumbnails: new Thumbnails([new Thumbnail(st.stream.previewImageURL, 0)]),
-        author: new PlatformAuthorLink(new PlatformID(PLATFORM, st.id, config.id), st.displayName, BASE_URL + st.login, st.profileImageURL || ''),
+        author: new PlatformAuthorLink(new PlatformID(PLATFORM, st.id, config.id, PLATFORM_CLAIMTYPE), st.displayName, BASE_URL + st.login, st.profileImageURL || ''),
         uploadDate: parseInt(new Date().getTime() / 1000),
         duration: 0,
         viewCount: st.stream.viewersCount,
@@ -1235,7 +1236,7 @@ function searchTaggedToPlatformVideo(st) {
  */
 function searchChannelToPlatformChannel(sc) {
     return new PlatformChannel({
-        id: new PlatformID(PLATFORM, sc.id, config.id),
+        id: new PlatformID(PLATFORM, sc.id, config.id, PLATFORM_CLAIMTYPE),
         name: sc.displayName,
         thumbnail: sc.profileImageURL,
         banner: '',
