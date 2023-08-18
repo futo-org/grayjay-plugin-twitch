@@ -7,7 +7,7 @@
 	"sourceUrl": "https://autoupdate.unkto.com/sources/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://futo.org",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 7,
+	"version": 8,
 
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",

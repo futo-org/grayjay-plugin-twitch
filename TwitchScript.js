@@ -142,6 +142,16 @@ source.getChannel = function (url) {
 source.getChannelContents = function (url) {
     return getChannelPager({ url, page_size: 20, cursor: null })
 }
+
+source.getChannelTemplateByClaimMap = () => {
+    return {
+        //SoundCloud
+        14: {
+            0: BASE_URL + "{{CLAIMVALUE}}"
+        }
+    };
+};
+
 source.isContentDetailsUrl = function (url) {
     // https://www.twitch.tv/user or https://www.twitch.tv/videos/123456789
     return /twitch\.tv\/[a-zA-Z0-9-_]+\/?/.test(url) || /twitch\.tv\/videos\/[0-9]+\/?/.test(url)
