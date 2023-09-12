@@ -7,7 +7,7 @@ touch $DOCUMENT_ROOT/maintenance.file
 
 # Swap over the content
 echo "Deploying content..."
-mkdir -p Twitch
+mkdir -p $DOCUMENT_ROOT/Twitch
 cp twitch.png $DOCUMENT_ROOT/Twitch
 cp TwitchConfig.json $DOCUMENT_ROOT/Twitch
 cp TwitchScript.js $DOCUMENT_ROOT/Twitch
