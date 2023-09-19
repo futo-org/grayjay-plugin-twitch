@@ -439,6 +439,13 @@ source.getComments = function (url) {
 source.getSubComments = function (comment) {
     return new CommentPager([], false, {}) //Not implemented
 }
+source.getLiveChatWindow = function(url) {
+    const login = url.split('/').pop()
+    return {
+        url: "https://www.twitch.tv/popout/" + login + "/chat",
+        removeElements: [ ".stream-chat-header", ".chat-room__content > div:first-child"]
+    };
+}
 source.getLiveEvents = function (url) {
     //TODO: Make this more robust, easy to break, expect query parameters.
     const login = url.split('/').pop()
@@ -458,19 +465,6 @@ source.getLiveEvents = function (url) {
             },
         },
         {
-            query: '#import "twilight/features/message/fragments/message-content-fragment.gql" query MessageBufferChatHistory($channelLogin: String! $channelID: ID) { channel(name: $channelLogin) { id recentChatMessages { ...historicalMessage } } } fragment chatHistoryParentMessage on Message { id content { text } deletedAt sender { id login displayName } } fragment historicalMessage on Message { id deletedAt sentAt content { ...messageContent } parentMessage { ...chatHistoryParentMessage } sender { id login chatColor displayName __typename } senderBadges(channelID: $channelID) { setID version id } }',
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '432ef3ec504a750d797297630052ec7c775f571f6634fdbda255af9ad84325ae',
-                    version: 1,
-                },
-            },
-            operationName: 'MessageBufferChatHistory',
-            variables: {
-                channelLogin: login,
-            },
-        },
-        {
             query: '#import "twilight/features/badges/models/badge-fragment.gql" #import "twilight/features/squad-stream/models/squad-stream-fragment.gql" query ChatList_Badges($channelLogin: String!) { badges { ...badge } user(login: $channelLogin) { id primaryColorHex broadcastBadges { ...badge } self { selectedBadge { ...badge } displayBadges { ...badge } } squadStream { ...squadStreamData } } }',
             extensions: {
                 persistedQuery: {
@@ -483,6 +477,20 @@ source.getLiveEvents = function (url) {
                 channelLogin: login,
             },
         },
+        /*
+        {
+            query: '#import "twilight/features/message/fragments/message-content-fragment.gql" query MessageBufferChatHistory($channelLogin: String! $channelID: ID) { channel(name: $channelLogin) { id recentChatMessages { ...historicalMessage } } } fragment chatHistoryParentMessage on Message { id content { text } deletedAt sender { id login displayName } } fragment historicalMessage on Message { id deletedAt sentAt content { ...messageContent } parentMessage { ...chatHistoryParentMessage } sender { id login chatColor displayName __typename } senderBadges(channelID: $channelID) { setID version id } }',
+            extensions: {
+                persistedQuery: {
+                    sha256Hash: '432ef3ec504a750d797297630052ec7c775f571f6634fdbda255af9ad84325ae',
+                    version: 1,
+                },
+            },
+            operationName: 'MessageBufferChatHistory',
+            variables: {
+                channelLogin: login,
+            },
+        }*/
     ]
 
     const json = callGQL(gql)
@@ -492,13 +500,13 @@ source.getLiveEvents = function (url) {
     const userOrError = ChannelShellResponse.data.userOrError
 
     /** @type {import("./types.d.ts").RecentChatsResponse} */
-    const RecentChatsResponse = json[1]
-    const chats = RecentChatsResponse.data.channel.recentChatMessages.map(
+    //const RecentChatsResponse = json[2]
+    const chats = []; /*RecentChatsResponse.data.channel.recentChatMessages.map(
         (chat) => new LiveEventComment(chat.sender.login, chat.content.text, '', chat.sender.chatColor)
-    )
+    )*/
 
     /** @type {import("./types.d.ts").BadgeListResponse} */
-    const BadgeListResponse = json[2]
+    const BadgeListResponse = json[1]
 
     let badge_url_map = {}
 
@@ -574,17 +582,23 @@ class TwitchLiveEventPager extends LiveEventPager {
                         }
                     }
 
-                    const name = msg.match(/;display-name=([^;]+);/)[1]
-                    const color = msg.match(/;color=([^;]+);/)[1]
-                    const badges = msg.match(/;badges=([^;]+);/)[1]
-                    const badge_array = badges.split(',')
+                    const nameMatch = msg.match(/;display-name=([^;]+);/);
+                    const name = (nameMatch && nameMatch.length >= 2) ? nameMatch[1] : null;
+                    const colorMatch = msg.match(/;color=([^;]+);/);
+                    const color = (colorMatch && colorMatch.length >= 2) ? colorMatch[1] : null;
+                    const badges = msg.match(/;badges=([^;]+);/)
+                    const badge_array = (badges && badges.length >= 2) ? badges[1].split(',') : [];
                     badge_array.forEach((badge) => {
                         newEmojis[badge] = badge_url_map[badge]
                     })
                     
-                    if (Object.keys(newEmojis).length > 0) me.events.push(new LiveEventEmojis(newEmojis))
-
-                    me.events.push(new LiveEventComment(name, parsedMessage.msg, '', color, badge_array))
+                    if (Object.keys(newEmojis).length > 0) 
+                        me.events.push(new LiveEventEmojis(newEmojis))
+                    
+                    if(name)
+                        me.events.push(new LiveEventComment(name, parsedMessage.msg, '', color, badge_array))
+                    else if(IS_TESTING)
+                        console.log("Failed name/color: " + msg);
                 },
             },
             false
