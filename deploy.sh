@@ -11,6 +11,7 @@ mkdir -p $DOCUMENT_ROOT/Twitch
 cp twitch.png $DOCUMENT_ROOT/Twitch
 cp TwitchConfig.json $DOCUMENT_ROOT/Twitch
 cp TwitchScript.js $DOCUMENT_ROOT/Twitch
+sh sign.sh $DOCUMENT_ROOT/Twitch/TwitchScript.js $DOCUMENT_ROOT/Twitch/TwitchConfig.json
 
 # Notify Cloudflare to wipe the CDN cache
 echo "Purging Cloudflare cache for zone $CLOUDFLARE_ZONE_ID..."
