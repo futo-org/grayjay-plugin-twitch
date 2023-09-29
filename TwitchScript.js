@@ -165,46 +165,29 @@ source.getContentDetails = function (url) {
 }
 source.getUserSubscriptions = function () {
     const gql = {
-        query: 'query PersonalSections( $input: PersonalSectionInput! $creatorAnniversariesFeature: Boolean! ) { personalSections(input: $input) { type title { ...personalSectionTitle } items { ...personalSectionItem } } } fragment personalSectionTitle on PersonalSectionTitle { localizedFallback localizedTokens { ... on PersonalSectionTextToken { value } ... on User { id login displayName } } } fragment personalSectionItem on PersonalSectionChannel { trackingID promotionsCampaignID user { ...personalSectionItemUser } label content { ...personalSectionsStream } } fragment personalSectionItemUser on User { id login displayName profileImageURL(width: 70) primaryColorHex broadcastSettings { id title } channel @include(if: $creatorAnniversariesFeature) { id activeCreatorEventCelebration { id } } } fragment personalSectionsStream on Stream { id previewImageURL(width: 320 height: 180) broadcaster { id broadcastSettings { id title } } viewersCount game { id displayName name } type }',
-        extensions: {
-            persistedQuery: {
-                sha256Hash: '807e3cce07a1cef5c772bbc46c12ead2898edd043ad4dd2236707f6f7995769c',
-                version: 1,
-            },
+        "operationName": "ChannelFollows",
+        "variables": {
+            "limit": 100,
+            "order": "DESC"
         },
-        operationName: 'PersonalSections',
-        variables: {
-            creatorAnniversariesFeature: false,
-            input: {
-                recommendationContext: {
-                    categoryName: null,
-                    channelName: null,
-                    clientApp: 'twilight',
-                    lastCategoryName: null,
-                    lastChannelName: null,
-                    pageviewContent: null,
-                    pageviewContentType: null,
-                    pageviewLocation: null,
-                    pageviewMedium: null,
-                    platform: 'web',
-                    previousPageviewContent: null,
-                    previousPageviewContentType: null,
-                    previousPageviewLocation: null,
-                    previousPageviewMedium: null,
-                },
-                sectionInputs: ['RECS_FOLLOWED_SECTION'],
-            },
-        },
-    }
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "eecf815273d3d949e5cf0085cc5084cd8a1b5b7b6f7990cf43cb0beadf546907"
+            }
+        }
+    };
 
     /** @type {import("./types.d.ts").PersonalSectionsFollowedResponse} */
     const json = callGQL(gql, true)
+    console.log("json", json)
 
-    const sections = json.data.personalSections[0]
+    const user = json.data.user;
+    if (!user) {
+        throw new ScriptException('Authentication Failed')
+    }
 
-    if (sections.type !== 'RECS_FOLLOWED_SECTION') throw new ScriptException('Authentication Failed')
-
-    return sections.items.map((section) => BASE_URL + section.user.login)
+    return user.follows.edges.map((e) => BASE_URL + e.node.login)
 }
 
 /**

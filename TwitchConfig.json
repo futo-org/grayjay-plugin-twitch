@@ -7,7 +7,7 @@
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://futo.org",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 10,
+	"version": 11,
 
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
@@ -26,7 +26,10 @@
 	"authentication": {
 		"userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.3",
 		"loginUrl": "https://www.twitch.tv/login",
-		"headersToFind": ["Authorization"]
+		"headersToFind": ["Authorization"],
+		"domainHeadersToFind": {
+			".twitch.tv": ["authorization"]
+		}
 	},
 
 	"supportedClaimTypes": [14]
