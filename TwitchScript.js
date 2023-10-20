@@ -939,7 +939,7 @@ function getChannelPager(context) {
 
     const edges = json.data.user.videos.edges
 
-    const videos = edges.map((edge) => {
+    let videos = edges.map((edge) => {
         return new PlatformVideo({
             id: new PlatformID(PLATFORM, edge.node.id, config.id),
             name: edge.node.title,
