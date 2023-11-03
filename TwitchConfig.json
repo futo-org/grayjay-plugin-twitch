@@ -3,11 +3,12 @@
 	"description": "One of the biggest livestreaming platforms, owned by Amazon.",
 	"author": "FUTO",
 	"authorUrl": "https://futo.org",
-	
+
+	"platformUrl": "https://twitch.tv",
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://futo.org",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 12,
+	"version": 13,
 
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
