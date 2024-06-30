@@ -8,6 +8,7 @@
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://futo.org",
 	"scriptUrl": "./TwitchScript.js",
+
 	"version": 18,
 
 	"iconUrl": "./twitch.png",
