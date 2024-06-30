@@ -426,7 +426,8 @@ source.getLiveChatWindow = function(url) {
     const login = url.split('/').pop()
     return {
         url: "https://www.twitch.tv/popout/" + login + "/chat",
-        removeElements: [ ".stream-chat-header", ".chat-room__content > div:first-child"]
+        removeElements: [ ".stream-chat-header", ".chat-room__content > div:first-child"],
+        removeElementsInterval: [ ".consent-banner" ]
     };
 }
 source.getLiveEvents = function (url) {
