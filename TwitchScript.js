@@ -233,7 +233,7 @@ function getSavedVideo(url) {
         },
     ]
 
-    const json1 = callGQL(gql1)
+    const json1 = callGQL(gql1, true)
 
     /** @type {import("./types.d.ts").PlaybackAccessTokenResponse} */
     const hls_json = json1[0]
@@ -361,7 +361,7 @@ function getLiveVideo(url, video_details = true) {
             query: 'query PlaybackAccessToken($login: String! $isLive: Boolean! $vodID: ID! $isVod: Boolean! $playerType: String!) { streamPlaybackAccessToken(channelName: $login params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isVod) { value signature } }',
         },
     ]
-    const json = callGQL(gql_for_metadata)
+    const json = callGQL(gql_for_metadata, true)
 
     /** @type {import("./types.d.ts").StreamMetadataResponse}*/
     const stream_metadata = json[0]
@@ -422,12 +422,12 @@ source.getComments = function (url) {
 source.getSubComments = function (comment) {
     return new CommentPager([], false, {}) //Not implemented
 }
-source.getLiveChatWindow = function(url) {
+source.getLiveChatWindow = function (url) {
     const login = url.split('/').pop()
     return {
         url: "https://www.twitch.tv/popout/" + login + "/chat",
-        removeElements: [ ".stream-chat-header", ".chat-room__content > div:first-child"],
-        removeElementsInterval: [ ".consent-banner" ]
+        removeElements: [".stream-chat-header", ".chat-room__content > div:first-child"],
+        removeElementsInterval: [".consent-banner"]
     };
 }
 source.getLiveEvents = function (url) {
@@ -533,7 +533,7 @@ class TwitchLiveEventPager extends LiveEventPager {
                     if (IS_TESTING) console.log(`Sent JOIN #${me.channelName}`)
                 },
                 message(msg) {
-                    if(((new Date()).getTime() - me.lastFetch) / 1000 > 10)socket_irc.close()
+                    if (((new Date()).getTime() - me.lastFetch) / 1000 > 10) socket_irc.close()
 
                     if (!msg.startsWith('@badge-info')) return
 
@@ -575,13 +575,13 @@ class TwitchLiveEventPager extends LiveEventPager {
                     badge_array.forEach((badge) => {
                         newEmojis[badge] = badge_url_map[badge]
                     })
-                    
-                    if (Object.keys(newEmojis).length > 0) 
+
+                    if (Object.keys(newEmojis).length > 0)
                         me.events.push(new LiveEventEmojis(newEmojis))
-                    
-                    if(name)
+
+                    if (name)
                         me.events.push(new LiveEventComment(name, parsedMessage.msg, '', color, badge_array))
-                    else if(IS_TESTING)
+                    else if (IS_TESTING)
                         console.log("Failed name/color: " + msg);
                 },
             },
@@ -597,7 +597,7 @@ class TwitchLiveEventPager extends LiveEventPager {
                 if (IS_TESTING) console.log(`Sent LISTEN to ${me.channelId}`)
             },
             message(msg) {
-                if(((new Date()).getTime() - me.lastFetch) / 1000 > 10)socket_pub_sub.close()
+                if (((new Date()).getTime() - me.lastFetch) / 1000 > 10) socket_pub_sub.close()
 
                 const json = JSON.parse(msg)
                 if (json.type === 'MESSAGE') {
