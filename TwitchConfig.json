@@ -9,9 +9,9 @@
 	"repositoryUrl": "https://futo.org",
 	"scriptUrl": "./TwitchScript.js",
 
-	"version": 19,
+	"version": 20,
 
-	"iconUrl": "./TwitchIcon.png",
+	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
 
 	"scriptSignature": "",
