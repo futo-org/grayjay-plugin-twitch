@@ -167,7 +167,7 @@ source.getChannel = function (url) {
     })
 }
 source.getChannelContents = function (url) {
-    return getChannelPager({ url, page_size: 20, cursor: null })
+    return getChannelPager({ url, page_size: 20, VideoCursor: null })
 }
 
 source.getChannelTemplateByClaimMap = () => {
