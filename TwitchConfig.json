@@ -22,7 +22,8 @@
 	"allowUrls": [
 		"gql.twitch.tv",
 		"twitch.tv",
-		"usher.ttvnw.net"
+		"usher.ttvnw.net",
+		"production.assets.clips.twitchcdn.net"
 	],
 	
 	"authentication": {
@@ -34,5 +35,12 @@
 		}
 	},
 
-	"supportedClaimTypes": [14]
+	"supportedClaimTypes": [14],
+	"settings": [{
+		"variable": "shouldIncludeChannelClips",
+		"name": "Show channel clips",
+		"description": "",
+		"type": "Boolean",
+		"default": "true"
+	}]
 }
