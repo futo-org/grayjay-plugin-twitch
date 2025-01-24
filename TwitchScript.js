@@ -1001,18 +1001,9 @@ function getCommentPager(context) {
  */
 function getChannelPager(context) {
     // url format https://www.twitch.tv/qtcinderella/videos?filter=all&sort=time (query params may or may not be there)
-    const url = context.url
-
-    const split = url.split('/')
-
     /** @type {string} */
-    let login
-
-    if (url.includes('/videos')) {
-        login = split[split.length - 2]
-    } else {
-        login = split[split.length - 1]
-    }
+    let login = extractChannelId(context.url)
+    
 
     const gqlVideoOperationName = 'FilterableVideoTower_Videos';
     const gqlClipOperationName = 'ClipsCards__User';
