@@ -6,11 +6,13 @@ const PLATFORM = 'Twitch'
 const PLATFORM_CLAIMTYPE = 14;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
 
-const LIVE_TYPE_HINT = '?is-live=true';
+const REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/videos\/(\d+)(\?.*)?$/
 
-const REGEX_CHANNEL = /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/([a-zA-Z0-9_-]+)(?:\/|\?|$)/;
+const REGEX_URL_CHANNEL = /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?!login|signup|directory|p\/|search|settings|subscriptions|inventory|friends|help|jobs|partner|moderation|store|bits|subs|creators|ads|extensions|prime|giftcard|turbo)([a-zA-Z0-9-_]+)(?:\/.*)?$/;
 
-const REGEX_LIST_CLIP = [
+const REGEX_URL_CHANNEL_CLIPS_FILTER = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9_-]+\/clips\/?\?.*$/
+
+const REGEX_URL_CLIP_DETAILS_LIST = [
     // Matches embedded clip URLs like https://clips.twitch.tv/embed?clip=clip-id
     /^https?:\/\/(www\.)?clips\.twitch\.tv\/embed\?clip=([a-zA-Z0-9_-]+)(&.*)?$/,
 
@@ -103,8 +105,7 @@ source.searchChannels = function (query) {
     return getSearchPagerChannels({ q: query, page_size: 20, results_returned: 0, cursor: null })
 }
 source.isChannelUrl = function (url) {
-    // Match valid channel URLs while excluding specific paths
-    return /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?!login|signup|directory|p\/|search|settings|subscriptions|inventory|friends|help|jobs|partner|moderation|creators|ads|prime|turbo)([a-zA-Z0-9-_]+)(?:\/.*)?$/.test(url);
+    return isChannelUrl(url);
 };
 source.getChannel = function (url) {
      
@@ -175,21 +176,13 @@ source.getChannelTemplateByClaimMap = () => {
 };
 
 source.isContentDetailsUrl = function (url) {
-    // Match VOD URLs
-    const isVod = /^https?:\/\/(www\.|m\.)?twitch\.tv\/videos\/[0-9]+/.test(url);
-    
-    // Match URLs with is-live=true parameter
-    const isLive = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9_-]+.*[?&]is-live=true/.test(url);
-
-    // Matches clip URLs
-    const isClip = isTwitchClipUrl(url);
-    
-    return isVod || isLive || isClip;
-};
+    // https://www.twitch.tv/user (for livestreams) or https://www.twitch.tv/videos/123456789 or clips
+    return (isChannelUrl(url) || isVideoUrl(url) || isTwitchClipDetailsUrl(url)) && !REGEX_URL_CHANNEL_CLIPS_FILTER.test(url);
+}
 source.getContentDetails = function (url) {
     if (url.includes('/video/') || url.includes('/videos/')) {
         return getSavedVideo(url)
-    }  else if(isTwitchClipUrl(url)) { 
+    }  else if(isTwitchClipDetailsUrl(url)) { 
         return getClippedVideo(url);
     }
     else if(!url.includes('/clips?')) { 
@@ -502,7 +495,7 @@ function getLiveVideo(url, video_details = true) {
         uploadDate: parseInt(new Date(ul.stream.createdAt).getTime() / 1000),
         duration: 0,
         viewCount: vc.stream.viewersCount,
-        url: url + LIVE_TYPE_HINT,
+        url: url,
         shareUrl: url,
         isLive: true,
     })
@@ -907,7 +900,7 @@ function getHomePagerPopular(context) {
             uploadDate: parseInt(new Date().getTime() / 1000),
             duration: 0,
             viewCount: n.viewersCount,
-            url: BASE_URL + n.broadcaster.login + LIVE_TYPE_HINT,
+            url: BASE_URL + n.broadcaster.login,
             shareUrl: BASE_URL + n.broadcaster.login,
             isLive: true,
         })
@@ -984,7 +977,7 @@ function personalSectionToPlatformVideo(ps) {
         uploadDate: parseInt(new Date().getTime() / 1000),
         duration: 0,
         viewCount: ps.content.viewersCount,
-        url: BASE_URL + ps.user.login + LIVE_TYPE_HINT,
+        url: BASE_URL + ps.user.login,
         shareUrl: BASE_URL + ps.user.login,
         isLive: true,
     })
@@ -1377,7 +1370,7 @@ function searchLiveToPlatformVideo(sl) {
         uploadDate: parseInt(new Date().getTime() / 1000),
         duration: 0,
         viewCount: sl.stream.viewersCount,
-        url: BASE_URL + sl.stream.broadcaster.login + LIVE_TYPE_HINT,
+        url: BASE_URL + sl.stream.broadcaster.login,
         shareUrl: BASE_URL + sl.stream.broadcaster.login,
         isLive: true,
     })
@@ -1416,7 +1409,7 @@ function searchTaggedToPlatformVideo(st) {
         uploadDate: parseInt(new Date().getTime() / 1000),
         duration: 0,
         viewCount: st.stream.viewersCount,
-        url: BASE_URL + st.login + LIVE_TYPE_HINT,
+        url: BASE_URL + st.login,
         shareUrl: BASE_URL + st.login,
         isLive: true,
     })
@@ -1441,7 +1434,7 @@ function searchChannelToPlatformChannel(sc) {
 }
 
 function extractChannelId(url) {
-    const match = url.match(REGEX_CHANNEL);
+    const match = url.match(REGEX_URL_CHANNEL);
 
     if (match && match[1]) {
         return match[1];
@@ -1455,16 +1448,30 @@ function extractChannelId(url) {
  * @param {string} url - The URL to check
  * @returns {boolean} - True if the URL matches any regex, false otherwise
  */
-function isTwitchClipUrl(url) {
+function isTwitchClipDetailsUrl(url) {
     if (!url) return false;
 
-    for (const regex of REGEX_LIST_CLIP) {
+    for (const regex of REGEX_URL_CLIP_DETAILS_LIST) {
         if (regex.test(url)) {
             return true;
         }
     }
 
     return false;
+}
+
+function isVideoUrl(url) {
+    return REGEX_URL_VIDEO_DETAILS.test(url);
+}
+
+function isChannelUrl(url) {
+    // Match valid channel URLs while excluding specific paths
+    return (
+        REGEX_URL_CHANNEL.test(url) 
+     || REGEX_URL_CHANNEL_CLIPS_FILTER
+    )
+    && !isTwitchClipDetailsUrl(url) 
+    && !isVideoUrl(url);
 }
 
 /**
@@ -1475,7 +1482,7 @@ function isTwitchClipUrl(url) {
 function extractTwitchClipSlug(url) {
     if (!url) return null;
 
-    for (const regex of REGEX_LIST_CLIP) {
+    for (const regex of REGEX_URL_CLIP_DETAILS_LIST) {
         const match = url.match(regex);
         if (match) {
             return match[2];
@@ -1488,7 +1495,7 @@ function extractTwitchClipSlug(url) {
 function extractTwitchVideoId(url) {
     if (!url) return null;
 
-    const match = url.match(/^https?:\/\/(www\.|m\.)?twitch\.tv\/videos\/(\d+)(\?.*)?$/);
+    const match = url.match(REGEX_URL_VIDEO_DETAILS);
     if (match) {
         return match[2]; // The second capturing group contains the video ID
     }
