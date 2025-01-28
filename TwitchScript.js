@@ -6,19 +6,41 @@ const PLATFORM = 'Twitch'
 const PLATFORM_CLAIMTYPE = 14;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
 
+const REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/videos\/(\d+)(\?.*)?$/
+
+const REGEX_URL_CHANNEL = /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?!login|signup|directory|p\/|search|settings|subscriptions|inventory|friends|help|jobs|partner|moderation|store|bits|subs|creators|ads|extensions|prime|giftcard|turbo)([a-zA-Z0-9-_]+)(?:\/.*)?$/;
+
+const REGEX_URL_CHANNEL_CLIPS_FILTER = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9_-]+\/clips\/?\?.*$/
+
+const REGEX_URL_CLIP_DETAILS_LIST = [
+    // Matches embedded clip URLs like https://clips.twitch.tv/embed?clip=clip-id
+    /^https?:\/\/(www\.)?clips\.twitch\.tv\/embed\?clip=([a-zA-Z0-9_-]+)(&.*)?$/,
+
+    // Matches URLs like https://clips.twitch.tv/clip-id
+    /^https?:\/\/(www\.)?clips\.twitch\.tv\/([a-zA-Z0-9_-]+)(\?.*)?$/,
+
+    // Matches URLs like https://www.twitch.tv/user-id/clip/clip-id or https://m.twitch.tv/user-id/clip/clip-id
+    /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9_-]+\/clip\/([a-zA-Z0-9_-]+)(\?.*)?$/,
+
+    // Matches URLs like https://www.twitch.tv/clip/clip-id or https://m.twitch.tv/clip/clip-id
+    /^https?:\/\/(www\.|m\.)?twitch\.tv\/clip\/([a-zA-Z0-9_-]+)(\?.*)?$/
+];
+
 //* Global Variables
 let CLIENT_SESSION_ID = ''
 let CLIENT_VERSION = ''
 let INTEGRITY = ''
 
 var config = {}
+let _settings = {};
 
 //* Source
 /**
  * The enable endpoint gets an integrity token. These integrity tokens must be passed into the stream playback access token endpoint. The integrity endpoint always returns a token but it is not always valid. Valid tokens work for 16 hours. Valid tokens are generated through a kasada challenge. The way to tell if a token is invalid is to try an endpoint and see if it fails.
  */
-source.enable = function (conf) {
+source.enable = function (conf, settings) {
     config = conf ?? {}
+    _settings = settings ?? {};
     CLIENT_VERSION = `3e62b6e7-8e71-47f1-a2b3-0d661abad039`
 
     const resp = http.POST('https://gql.twitch.tv/integrity', '', {
@@ -83,10 +105,11 @@ source.searchChannels = function (query) {
     return getSearchPagerChannels({ q: query, page_size: 20, results_returned: 0, cursor: null })
 }
 source.isChannelUrl = function (url) {
-    return /twitch\.tv\/[a-zA-Z0-9-_]+\/?/.test(url) || /twitch\.tv\/[a-zA-Z0-9-_]+\/videos\/?/.test(url)
-}
+    return isChannelUrl(url);
+};
 source.getChannel = function (url) {
-    const login = url.split('/').pop()
+     
+    const login = extractChannelId(url);
 
     const gql = [
         {
@@ -140,7 +163,7 @@ source.getChannel = function (url) {
     })
 }
 source.getChannelContents = function (url) {
-    return getChannelPager({ url, page_size: 20, cursor: null })
+    return getChannelPager({ url, page_size: 20, VideoCursor: null })
 }
 
 source.getChannelTemplateByClaimMap = () => {
@@ -153,13 +176,16 @@ source.getChannelTemplateByClaimMap = () => {
 };
 
 source.isContentDetailsUrl = function (url) {
-    // https://www.twitch.tv/user or https://www.twitch.tv/videos/123456789
-    return /twitch\.tv\/[a-zA-Z0-9-_]+\/?/.test(url) || /twitch\.tv\/videos\/[0-9]+\/?/.test(url)
+    // https://www.twitch.tv/user (for livestreams) or https://www.twitch.tv/videos/123456789 or clips
+    return (isChannelUrl(url) || isVideoUrl(url) || isTwitchClipDetailsUrl(url)) && !REGEX_URL_CHANNEL_CLIPS_FILTER.test(url);
 }
 source.getContentDetails = function (url) {
     if (url.includes('/video/') || url.includes('/videos/')) {
         return getSavedVideo(url)
-    } else {
+    }  else if(isTwitchClipDetailsUrl(url)) { 
+        return getClippedVideo(url);
+    }
+    else if(!url.includes('/clips?')) { 
         return getLiveVideo(url)
     }
 }
@@ -190,6 +216,75 @@ source.getUserSubscriptions = function () {
     return user.follows.edges.map((e) => BASE_URL + e.node.login)
 }
 
+function getClippedVideo(url) {
+    
+    const clipSlug = extractTwitchClipSlug(url);
+
+    const gql1 = [
+        {
+            "operationName": "VideoAccessToken_Clip",
+            "variables": {
+                "platform": "web",
+                "slug": clipSlug
+            },
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": "6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f"
+                }
+            }
+        },
+        {
+            "operationName": "ShareClipRenderStatus",
+            "variables": {
+                "slug": clipSlug
+            },
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": "f130048a462a0ac86bb54d653c968c514e9ab9ca94db52368c1179e97b0f16eb"
+                }
+            }
+        },
+    ];
+
+    const gqlResponses = callGQL(gql1, true);
+
+    const clip = gqlResponses[1]?.data?.clip;
+
+    const qualities = gqlResponses[0]?.data?.clip?.videoQualities ?? [];
+
+    const sources = qualities.map(quality => {
+        const sourceUrl = `${quality.sourceURL}?sig=${clip.playbackAccessToken.signature}&token=${encodeURIComponent(clip.playbackAccessToken.value)}`
+        return new VideoUrlSource({ 
+            name: `${quality.quality}p`, 
+            duration: clip.durationSeconds, 
+            url: sourceUrl,
+            width: parseInt(quality.quality),
+            container: "video/mp4"
+        });  
+    })
+
+    return new PlatformVideoDetails({
+        id: new PlatformID(PLATFORM, clipSlug, config.id),
+        name: clip.title,
+        thumbnails: new Thumbnails([new Thumbnail(clip.thumbnailURL, 0)]),
+        author: new PlatformAuthorLink(
+            new PlatformID(PLATFORM, clip.broadcaster.id, config.id, PLATFORM_CLAIMTYPE),
+            clip.broadcaster.displayName,
+            `${BASE_URL}${clip.broadcaster.login}`,
+            clip.broadcaster.profileImageURL
+        ),
+        uploadDate: parseInt(new Date(clip.createdAt).getTime() / 1000),
+        duration: clip.durationSeconds,
+        viewCount: clip.viewCount,
+        url: url,
+        isLive: false,
+        description: `${clip.game.displayName}\nClipped by ${clip.curator.displayName}`,
+        video: new VideoSourceDescriptor(sources),
+    })
+}
+
 /**
  * Returns a saved video
  * @param {string} url
@@ -197,7 +292,7 @@ source.getUserSubscriptions = function () {
  */
 function getSavedVideo(url) {
     // get whatever is after the last slash in twitch.tv/videos/____/
-    const id = url.split('/').pop()
+    const id = extractTwitchVideoId(url)
 
     // query as written: '# This query name is VERY IMPORTANT. # # There is code in twilight-apollo to split links such that # this query is NOT batched in an effort to retain snappy TTV. query PlaybackAccessToken($login: String! $isLive: Boolean! $vodID: ID! $isVod: Boolean! $playerType: String!) { streamPlaybackAccessToken(channelName: $login params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isVod) { value signature } }'
     const gql1 = [
@@ -302,7 +397,8 @@ function getSavedVideo(url) {
  */
 function getLiveVideo(url, video_details = true) {
     // get whatever is after the last slash in twitch.tv/_____/
-    const login = url.split('/').pop()
+    const login = extractChannelId(url);
+    
     const gql_for_metadata = [
         {
             operationName: 'StreamMetadata',
@@ -398,10 +494,10 @@ function getLiveVideo(url, video_details = true) {
         ]),
         author: new PlatformAuthorLink(new PlatformID(PLATFORM, sm.channel.id, config.id, PLATFORM_CLAIMTYPE), login, url, sm.profileImageURL),
         uploadDate: parseInt(new Date(ul.stream.createdAt).getTime() / 1000),
-        // uploadDate: parseInt(new Date().getTime() / 1000),
         duration: 0,
         viewCount: vc.stream.viewersCount,
         url: url,
+        shareUrl: url,
         isLive: true,
     })
 
@@ -423,7 +519,7 @@ source.getSubComments = function (comment) {
     return new CommentPager([], false, {}) //Not implemented
 }
 source.getLiveChatWindow = function (url) {
-    const login = url.split('/').pop()
+    const login = extractChannelId(url);
     return {
         url: "https://www.twitch.tv/popout/" + login + "/chat",
         removeElements: [".stream-chat-header", ".chat-room__content > div:first-child"],
@@ -431,8 +527,8 @@ source.getLiveChatWindow = function (url) {
     };
 }
 source.getLiveEvents = function (url) {
-    //TODO: Make this more robust, easy to break, expect query parameters.
-    const login = url.split('/').pop()
+
+    const login = extractChannelId(url);
 
     const gql = [
         {
@@ -806,6 +902,7 @@ function getHomePagerPopular(context) {
             duration: 0,
             viewCount: n.viewersCount,
             url: BASE_URL + n.broadcaster.login,
+            shareUrl: BASE_URL + n.broadcaster.login,
             isLive: true,
         })
     })
@@ -882,6 +979,7 @@ function personalSectionToPlatformVideo(ps) {
         duration: 0,
         viewCount: ps.content.viewersCount,
         url: BASE_URL + ps.user.login,
+        shareUrl: BASE_URL + ps.user.login,
         isLive: true,
     })
 }
@@ -904,62 +1002,124 @@ function getCommentPager(context) {
  */
 function getChannelPager(context) {
     // url format https://www.twitch.tv/qtcinderella/videos?filter=all&sort=time (query params may or may not be there)
-    const url = context.url
-
-    const split = url.split('/')
-
     /** @type {string} */
-    let login
+    let login = extractChannelId(context.url)
+    
 
-    if (url.includes('/videos')) {
-        login = split[split.length - 2]
-    } else {
-        login = split[split.length - 1]
-    }
+    const gqlVideoOperationName = 'FilterableVideoTower_Videos';
+    const gqlClipOperationName = 'ClipsCards__User';
 
-    const gql = {
+    let gql = [{
         extensions: {
             persistedQuery: {
                 sha256Hash: 'a937f1d22e269e39a03b509f65a7490f9fc247d7f83d6ac1421523e3b68042cb',
                 version: 1,
             },
         },
-        operationName: 'FilterableVideoTower_Videos',
+        operationName: gqlVideoOperationName,
         variables: {
             broadcastType: null,
             channelOwnerLogin: login,
-            cursor: context.cursor,
+            cursor: context.VideoCursor,
             limit: context.page_size,
             videoSort: 'TIME',
         },
         query: '#import "twilight/features/video-preview-card/models/video-edge-fragment.gql" query FilterableVideoTower_Videos($channelOwnerLogin: String! $limit: Int $cursor: Cursor $broadcastType: BroadcastType $videoSort: VideoSort $options: VideoConnectionOptionsInput) { user(login: $channelOwnerLogin) { id videos(first: $limit after: $cursor type: $broadcastType sort: $videoSort options: $options) { edges { ...VideoEdge } pageInfo { hasNextPage } } } }',
+    },
+    {
+        operationName: gqlClipOperationName,
+        variables: {
+            login: login,
+            limit: 30,
+            criteria: {
+                filter: "ALL_TIME",
+                shouldFilterByDiscoverySetting: true
+            },
+            cursor: context.ClipCursor
+        },
+        extensions: {
+            persistedQuery: {
+                version: 1,
+                sha256Hash: "4eb8f85fc41a36c481d809e8e99b2a32127fdb7647c336d27743ec4a88c4ea44"
+            }
+        }
+    }]
+
+    if(context.videosHasNext === undefined) {
+        context.videosHasNext = true;
     }
 
-    /** @type {import("./types.d.ts").VideoTowerResponse}*/
-    const json = callGQL(gql)
+    if(context.clipsHasNext === undefined) {
+        context.clipsHasNext = true;
+    }
 
-    const edges = json.data.user.videos.edges
+    if(_settings.shouldIncludeChannelClips === false) {
+        context.clipsHasNext = false;
+    }
 
-    let videos = edges.map((edge) => {
+    if(context.videosHasNext === false) {
+        gql = gql.filter(g => g.operationName != gqlVideoOperationName)
+    }
+    
+    if(context.clipsHasNext === false) {
+        gql = gql.filter(g => g.operationName != gqlClipOperationName)
+    }
+
+    const response = callGQL(gql)
+
+    let videosJson = [];
+    let clipsJson = [];
+    
+    if(context.videosHasNext) {
+        const index = response.findIndex(e => e.extensions.operationName == gqlVideoOperationName);
+        videosJson = response[index];
+    }
+    
+    if(context.clipsHasNext) {
+        const index = response.findIndex(e => e.extensions.operationName == gqlClipOperationName);
+        clipsJson = response[index];
+    }
+
+    const edges = videosJson?.data?.user?.videos?.edges ?? [];
+    const clips = clipsJson?.data?.user?.clips?.edges ?? [];
+
+    let videos = [...edges,...clips].map((edge) => {
+        
+        let owner;
+        let contentUrl;
+
+        if(edge.node.__typename == 'Clip') {
+            owner = edge.node.broadcaster;
+            contentUrl = `https://www.twitch.tv/${owner.login}/clip/${edge.node.slug}`            
+        } else 
+        {
+            owner = edge.node.owner;
+            contentUrl = BASE_URL + 'videos/' + edge.node.id;
+        }
+
+        const uploadDate = edge?.node?.publishedAt ?? edge?.node?.createdAt ?? "";
+        const duration = edge?.node?.lengthSeconds ?? edge?.node?.durationSeconds ?? "";
+        const thumbnail = edge?.node?.previewThumbnailURL ?? edge?.node?.thumbnailURL ?? "";
+
         return new PlatformVideo({
             id: new PlatformID(PLATFORM, edge.node.id, config.id),
             name: edge.node.title,
-            thumbnails: new Thumbnails([new Thumbnail(edge.node.previewThumbnailURL, 0)]),
+            thumbnails: new Thumbnails([new Thumbnail(thumbnail, 0)]),
             author: new PlatformAuthorLink(
-                new PlatformID(PLATFORM, edge.node.owner.id, config.id, PLATFORM_CLAIMTYPE),
-                edge.node.owner.displayName,
-                BASE_URL + edge.node.owner.login,
-                edge.node.owner.profileImageURL
+                new PlatformID(PLATFORM, owner.id, config.id, PLATFORM_CLAIMTYPE),
+                owner.displayName,
+                BASE_URL + owner.login,
+                owner.profileImageURL
             ),
-            uploadDate: parseInt(new Date(edge.node.publishedAt).getTime() / 1000),
-            url: BASE_URL + 'videos/' + edge.node.id,
-            duration: edge.node.lengthSeconds,
+            uploadDate: parseInt(new Date(uploadDate).getTime() / 1000),
+            url: contentUrl,
+            duration: duration,
             viewCount: edge.node.viewCount,
             isLive: false,
         })
     })
 
-    if (context.cursor === null) {
+    if (context.VideoCursor === null) {
         // get the currently live stream
         try {
             const current_stream = getLiveVideo(BASE_URL + login, false)
@@ -972,10 +1132,18 @@ function getChannelPager(context) {
     }
 
     if (edges.length > 0) {
-        context.cursor = edges[edges.length - 1].cursor
+        context.VideoCursor = edges[edges.length - 1].cursor
     }
 
-    return new ChannelVideoPager(context, videos, json.data.user.videos.pageInfo.hasNextPage)
+    if (clips.length > 0) {
+        context.ClipCursor = clips[clips.length - 1].cursor
+    }
+       
+    context.videosHasNext = videosJson?.data?.user?.videos?.pageInfo?.hasNextPage ?? false;
+    context.clipsHasNext = clipsJson?.data?.user?.clips?.pageInfo?.hasNextPage ?? false;
+    const hasNext = context.videosHasNext || context.clipsHasNext;
+
+    return new ChannelVideoPager(context, videos, hasNext)
 }
 
 /**
@@ -1195,6 +1363,7 @@ function searchLiveToPlatformVideo(sl) {
         duration: 0,
         viewCount: sl.stream.viewersCount,
         url: BASE_URL + sl.stream.broadcaster.login,
+        shareUrl: BASE_URL + sl.stream.broadcaster.login,
         isLive: true,
     })
 }
@@ -1233,6 +1402,7 @@ function searchTaggedToPlatformVideo(st) {
         duration: 0,
         viewCount: st.stream.viewersCount,
         url: BASE_URL + st.login,
+        shareUrl: BASE_URL + st.login,
         isLive: true,
     })
 }
@@ -1253,6 +1423,76 @@ function searchChannelToPlatformChannel(sc) {
         url: BASE_URL + sc.login,
         links: [],
     })
+}
+
+function extractChannelId(url) {
+    const match = url.match(REGEX_URL_CHANNEL);
+
+    if (match && match[1]) {
+        return match[1];
+    } else {
+        console.log("Channel ID not found.");
+    }
+}
+
+/**
+ * Checks if a URL matches any Twitch clip URL formats
+ * @param {string} url - The URL to check
+ * @returns {boolean} - True if the URL matches any regex, false otherwise
+ */
+function isTwitchClipDetailsUrl(url) {
+    if (!url) return false;
+
+    for (const regex of REGEX_URL_CLIP_DETAILS_LIST) {
+        if (regex.test(url)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function isVideoUrl(url) {
+    return REGEX_URL_VIDEO_DETAILS.test(url);
+}
+
+function isChannelUrl(url) {
+    // Match valid channel URLs while excluding specific paths
+    return (
+        REGEX_URL_CHANNEL.test(url) 
+     || REGEX_URL_CHANNEL_CLIPS_FILTER.test(url) 
+    )
+    && !isTwitchClipDetailsUrl(url) 
+    && !isVideoUrl(url);
+}
+
+/**
+ * Extracts the clip ID from various Twitch clip URL formats
+ * @param {string} url - The Twitch clip URL
+ * @returns {string|null} - The clip ID if found, null otherwise
+ */
+function extractTwitchClipSlug(url) {
+    if (!url) return null;
+
+    for (const regex of REGEX_URL_CLIP_DETAILS_LIST) {
+        const match = url.match(regex);
+        if (match) {
+            return match[2];
+        }
+    }
+
+    return null;
+}
+
+function extractTwitchVideoId(url) {
+    if (!url) return null;
+
+    const match = url.match(REGEX_URL_VIDEO_DETAILS);
+    if (match) {
+        return match[2]; // The second capturing group contains the video ID
+    }
+
+    return null; // Return null if no match
 }
 
 console.log('LOADED')
