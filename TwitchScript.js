@@ -261,6 +261,7 @@ function getClippedVideo(url) {
             duration: clip.durationSeconds, 
             url: sourceUrl,
             width: parseInt(quality.quality),
+            container: "video/mp4"
         });  
     })
 
