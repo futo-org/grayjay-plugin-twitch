@@ -1459,7 +1459,7 @@ function isChannelUrl(url) {
     // Match valid channel URLs while excluding specific paths
     return (
         REGEX_URL_CHANNEL.test(url) 
-     || REGEX_URL_CHANNEL_CLIPS_FILTER
+     || REGEX_URL_CHANNEL_CLIPS_FILTER.test(url) 
     )
     && !isTwitchClipDetailsUrl(url) 
     && !isVideoUrl(url);
