@@ -6,6 +6,7 @@ const PLATFORM = 'Twitch'
 const PLATFORM_CLAIMTYPE = 14;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
 
+const OLD_REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9-_]+\/video\/(\d+)(\?.*)?$/
 const REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9-_]+\/video\/(\d+)(\?.*)?$/
 
 const REGEX_URL_CHANNEL = /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?!login|signup|directory|p\/|search|settings|subscriptions|inventory|friends|help|jobs|partner|moderation|store|bits|subs|creators|ads|extensions|prime|giftcard|turbo)([a-zA-Z0-9-_]+)(?:\/.*)?$/;
@@ -1453,7 +1454,7 @@ function isTwitchClipDetailsUrl(url) {
 }
 
 function isVideoUrl(url) {
-    return REGEX_URL_VIDEO_DETAILS.test(url);
+    return REGEX_URL_VIDEO_DETAILS.test(url) || OLD_REGEX_URL_VIDEO_DETAILS.test(url);
 }
 
 function isChannelUrl(url) {
@@ -1490,6 +1491,11 @@ function extractTwitchVideoId(url) {
     const match = url.match(REGEX_URL_VIDEO_DETAILS);
     if (match) {
         return match[2]; // The second capturing group contains the video ID
+    }
+
+    const old_match = url.match(OLD_REGEX_URL_VIDEO_DETAILS);
+    if (old_match) {
+        return old_match[2]; // The second capturing group contains the video ID
     }
 
     return null; // Return null if no match

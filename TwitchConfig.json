@@ -9,7 +9,7 @@
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
 
-	"version": 22,
+	"version": 23,
 
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
