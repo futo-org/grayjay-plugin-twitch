@@ -6,10 +6,10 @@
 
 	"platformUrl": "https://twitch.tv",
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
-	"repositoryUrl": "https://futo.org",
+	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
 
-	"version": 21,
+	"version": 24,
 
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
