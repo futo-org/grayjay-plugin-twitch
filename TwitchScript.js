@@ -267,7 +267,7 @@ function getClippedVideo(url) {
     })
 
     const description = [
-        clip?.game?.displayName ? `${clip.game.displayName} \n` : '',
+        clip?.game?.displayName ? `${clip.game.displayName} ` : '',
         clip?.curator?.displayName ? `Clipped by ${clip.curator.displayName}` : ''
     ]
     .filter(Boolean)
