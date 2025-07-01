@@ -266,6 +266,13 @@ function getClippedVideo(url) {
         });  
     })
 
+    const description = [
+        clip?.game?.displayName ? `${clip.game.displayName} ` : '',
+        clip?.curator?.displayName ? `Clipped by ${clip.curator.displayName}` : ''
+    ]
+    .filter(Boolean)
+    .join('\n ');
+
     return new PlatformVideoDetails({
         id: new PlatformID(PLATFORM, clipSlug, config.id),
         name: clip.title,
@@ -281,7 +288,7 @@ function getClippedVideo(url) {
         viewCount: clip.viewCount,
         url: url,
         isLive: false,
-        description: `${clip.game.displayName}\nClipped by ${clip.curator.displayName}`,
+        description,
         video: new VideoSourceDescriptor(sources),
     })
 }
