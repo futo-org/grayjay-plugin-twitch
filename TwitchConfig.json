@@ -9,7 +9,7 @@
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
 
-	"version": 25,
+	"version": 26,
 
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
@@ -46,6 +46,9 @@
 	"changelog": {
 		"25": [
 			"Fix: solve playback errors in some clips;"
+		],
+		"26": [
+			"Fix: home error;"
 		]
 	}
 }
