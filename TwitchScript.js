@@ -894,7 +894,9 @@ function getHomePagerPopular(context) {
     const json = callGQL(gql) //! to use authentication, requires valid integrity
     // const json = callGQL(gql, true)
 
-    const streams = json.data.streams.edges.map((s) => {
+    const streams = json.data.streams.edges
+    .filter((s) => s.node.broadcaster)
+    .map((s) => {
         let n = s.node
         return new PlatformVideo({
             id: new PlatformID(PLATFORM, n.id, config.id),
