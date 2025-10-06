@@ -12,8 +12,8 @@ const files = {
         content: await readFile("TwitchConfig.json"),
         type: "application/json",
     },
-    "/TwitchIcon.png": {
-        content: await readFile("TwitchIcon.png"),
+    "/twitch.png": {
+        content: await readFile("twitch.png"),
         type: "image/png",
     },
 };
@@ -41,7 +41,7 @@ createServer((req, res) => {
                 return files[req.url];
             case "/TwitchConfig.json":
                 return files[req.url];
-            case "/TwitchIcon.png":
+            case "/twitch.png":
                 return files[req.url];
             default:
                 return undefined;
