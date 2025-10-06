@@ -347,7 +347,7 @@ function getSavedVideo(url) {
 
     const spat = hls_json.data.videoPlaybackAccessToken
 
-    const hls_url = `https://usher.ttvnw.net/vod/${id}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=vbr_v1&cdm=wv&player_version=1.20.0`
+    const hls_url = `https://usher.ttvnw.net/vod/${id}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
 
     checkHLS(hls_url)
 
@@ -487,7 +487,7 @@ function getLiveVideo(url, video_details = true) {
 
     const spat = playback_access_token.data.streamPlaybackAccessToken
 
-    const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=vbr_v1&cdm=wv&player_version=1.20.0`
+    const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
 
     checkHLS(hls_url)
 
@@ -1511,3 +1511,4 @@ function extractTwitchVideoId(url) {
 }
 
 console.log('LOADED')
+
