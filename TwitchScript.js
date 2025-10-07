@@ -155,6 +155,22 @@ source.getChannel = function (url) {
     const shell_resp = json[1]
     const shell = shell_resp.data.userOrError
 
+    const links = Object.fromEntries(
+        user?.channel?.socialMedias?.filter(s => s.url).map(s => {
+            let key;
+            if (s.name) {
+                key = s.name.charAt(0).toUpperCase() + s.name.slice(1);
+            } else {
+                try {
+                    key = new URL(s.url).hostname.replace('www.', '') || s.url;
+                } catch {
+                    key = s.url;
+                }
+            }
+            return [key, s.url];
+        }) ?? []
+    );
+
     return new PlatformChannel({
         id: new PlatformID(PLATFORM, user.id, config.id, PLATFORM_CLAIMTYPE),
         name: user.displayName,
@@ -163,7 +179,7 @@ source.getChannel = function (url) {
         subscribers: user.followers.totalCount,
         description: user.description,
         url: BASE_URL + login,
-        links: user.channel.socialMedias.map((social) => social.url),
+        links,
     })
 }
 source.getChannelContents = function (url) {
