@@ -27,12 +27,15 @@ const REGEX_URL_CLIP_DETAILS_LIST = [
     /^https?:\/\/(www\.|m\.)?twitch\.tv\/clip\/([a-zA-Z0-9_-]+)(\?.*)?$/
 ];
 
+const MAX_RECOMMENDATION_TAGS = 3;
+const RECOMMENDATION_LIMIT = 20;
+
 //* Global Variables
 let CLIENT_SESSION_ID = ''
 let CLIENT_VERSION = ''
 let INTEGRITY = ''
 
-var config = {}
+let config = {}
 let _settings = {};
 
 //* Source
@@ -152,6 +155,22 @@ source.getChannel = function (url) {
     const shell_resp = json[1]
     const shell = shell_resp.data.userOrError
 
+    const links = Object.fromEntries(
+        user?.channel?.socialMedias?.filter(s => s.url).map(s => {
+            let key;
+            if (s.name) {
+                key = s.name.charAt(0).toUpperCase() + s.name.slice(1);
+            } else {
+                try {
+                    key = new URL(s.url).hostname.replace('www.', '') || s.url;
+                } catch {
+                    key = s.url;
+                }
+            }
+            return [key, s.url];
+        }) ?? []
+    );
+
     return new PlatformChannel({
         id: new PlatformID(PLATFORM, user.id, config.id, PLATFORM_CLAIMTYPE),
         name: user.displayName,
@@ -160,7 +179,7 @@ source.getChannel = function (url) {
         subscribers: user.followers.totalCount,
         description: user.description,
         url: BASE_URL + login,
-        links: user.channel.socialMedias.map((social) => social.url),
+        links,
     })
 }
 source.getChannelContents = function (url) {
@@ -183,13 +202,47 @@ source.isContentDetailsUrl = function (url) {
 source.getContentDetails = function (url) {
     if (url.includes('/video/') || url.includes('/videos/')) {
         return getSavedVideo(url)
-    }  else if(isTwitchClipDetailsUrl(url)) { 
+    }  else if(isTwitchClipDetailsUrl(url)) {
         return getClippedVideo(url);
     }
-    else if(!url.includes('/clips?')) { 
+    else if(!url.includes('/clips?')) {
         return getLiveVideo(url)
     }
 }
+
+source.getContentRecommendations = function (url, obj) {
+    // Extract content information for recommendations
+    let gameId = null;
+    let gameName = null;
+    let tags = [];
+    let broadcasterId = null;
+
+    // Try to get information from the provided object first
+    if (obj) {
+        if (obj.game) {
+            gameId = obj.game.id;
+            gameName = obj.game.name || obj.game.displayName;
+        }
+        if (obj.freeformTags) {
+            tags = obj.freeformTags.map(tag => tag.name);
+        }
+        if (obj.broadcaster) {
+            broadcasterId = obj.broadcaster.id;
+        } else if (obj?.author?.id) {
+            broadcasterId = obj.author.id.value;
+        }
+    }
+
+    // Build recommendation query based on available information
+    return getRecommendationsPager({
+        gameId: gameId,
+        gameName: gameName,
+        tags: tags,
+        broadcasterId: broadcasterId,
+        excludeUrl: url
+    });
+}
+
 source.getUserSubscriptions = function () {
     const gql = {
         "operationName": "ChannelFollows",
@@ -207,7 +260,6 @@ source.getUserSubscriptions = function () {
 
     /** @type {import("./types.d.ts").PersonalSectionsFollowedResponse} */
     const json = callGQL(gql, true)
-    console.log("json", json)
 
     const user = json.data.user;
     if (!user) {
@@ -253,6 +305,11 @@ function getClippedVideo(url) {
 
     const clip = gqlResponses[1]?.data?.clip;
 
+    // Check if clip exists
+    if (!clip) {
+        throw new UnavailableException('Clip not found or unavailable');
+    }
+
     const qualities = gqlResponses[0]?.data?.clip?.videoQualities ?? [];
 
     const sources = qualities.map(quality => {
@@ -273,7 +330,7 @@ function getClippedVideo(url) {
     .filter(Boolean)
     .join('\n ');
 
-    return new PlatformVideoDetails({
+    const result = new PlatformVideoDetails({
         id: new PlatformID(PLATFORM, clipSlug, config.id),
         name: clip.title,
         thumbnails: new Thumbnails([new Thumbnail(clip.thumbnailURL, 0)]),
@@ -290,7 +347,22 @@ function getClippedVideo(url) {
         isLive: false,
         description,
         video: new VideoSourceDescriptor(sources),
-    })
+    });
+
+    const clipMetadata = {
+        game: clip.game,
+        broadcaster: clip.broadcaster
+    };
+
+    if (IS_TESTING) {
+        source.getContentRecommendations(url, clipMetadata);
+    } else {
+        result.getContentRecommendations = function () {
+            return source.getContentRecommendations(url, clipMetadata);
+        };
+    }
+
+    return result;
 }
 
 /**
@@ -347,7 +419,7 @@ function getSavedVideo(url) {
 
     const spat = hls_json.data.videoPlaybackAccessToken
 
-    const hls_url = `https://usher.ttvnw.net/vod/${id}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=vbr_v1&cdm=wv&player_version=1.20.0`
+    const hls_url = `https://usher.ttvnw.net/vod/${id}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
 
     checkHLS(hls_url)
 
@@ -377,7 +449,7 @@ function getSavedVideo(url) {
 
     const vm = video_metadata.data
 
-    return new PlatformVideoDetails({
+    const result = new PlatformVideoDetails({
         id: new PlatformID(PLATFORM, id, config.id),
         name: vm.video.title,
         thumbnails: new Thumbnails([new Thumbnail(vm.video.previewThumbnailURL, 0)]),
@@ -394,7 +466,21 @@ function getSavedVideo(url) {
         isLive: false,
         description: vm.video.description !== null ? vm.video.description : '',
         video: new VideoSourceDescriptor(sources),
-    })
+    });
+
+    const vodMetadata = {
+        game: vm.video.game
+    };
+
+    if (IS_TESTING) {
+        source.getContentRecommendations(url, vodMetadata);
+    } else {
+        result.getContentRecommendations = function () {
+            return source.getContentRecommendations(url, vodMetadata);
+        };
+    }
+
+    return result;
 }
 
 /**
@@ -480,6 +566,11 @@ function getLiveVideo(url, video_details = true) {
     const vc = view_count.data.user
     const ul = use_live.data.user
 
+    // Check if channel exists
+    if (!sm || !vc || !ul) {
+        throw new UnavailableException('Channel not found')
+    }
+
     if (ul?.stream === null) {
         // log('Channel is not live:' + JSON.stringify(use_live, null, 2))
         throw new UnavailableException('Channel is not live')
@@ -487,7 +578,12 @@ function getLiveVideo(url, video_details = true) {
 
     const spat = playback_access_token.data.streamPlaybackAccessToken
 
-    const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=vbr_v1&cdm=wv&player_version=1.20.0`
+    // Check if playback access token is available
+    if (!spat) {
+        throw new UnavailableException('Unable to get playback access token')
+    }
+
+    const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
 
     checkHLS(hls_url)
 
@@ -510,12 +606,31 @@ function getLiveVideo(url, video_details = true) {
     })
 
     if (video_details) {
-        return new PlatformVideoDetails({
+        const result = new PlatformVideoDetails({
             ...pv,
             description: '',
             video: new VideoSourceDescriptor([]),
             live: hls_source,
-        })
+        });
+
+        const liveMetadata = {
+            game: sm.stream?.game,
+            broadcaster: {
+                id: sm.channel.id,
+                login: login,
+                displayName: login
+            }
+        };
+
+        if (IS_TESTING) {
+            source.getContentRecommendations(url, liveMetadata);
+        } else {
+            result.getContentRecommendations = function () {
+                return source.getContentRecommendations(url, liveMetadata);
+            };
+        }
+
+        return result;
     } else {
         return pv
     }
@@ -858,9 +973,10 @@ function checkHLS(url) {
 /**
  * Gets a pager for the home pager
  * @param {import("./types.d.ts").HomeContext} context
+ * @param {string} [excludeUrl] - Optional URL to exclude from results
  * @returns {HomePagerPopular}
  */
-function getHomePagerPopular(context) {
+function getHomePagerPopular(context, excludeUrl = null) {
     let gql = {
         extensions: {
             persistedQuery: {
@@ -894,7 +1010,7 @@ function getHomePagerPopular(context) {
     const json = callGQL(gql) //! to use authentication, requires valid integrity
     // const json = callGQL(gql, true)
 
-    const streams = json.data.streams.edges
+    let streams = json.data.streams.edges
     .filter((s) => s.node.broadcaster)
     .map((s) => {
         let n = s.node
@@ -916,6 +1032,14 @@ function getHomePagerPopular(context) {
             isLive: true,
         })
     })
+
+    // Filter out the excluded URL if provided
+    if (excludeUrl) {
+        // Normalize URLs for comparison (remove trailing slashes, convert to lowercase)
+        const normalizeUrl = (url) => url.toLowerCase().replace(/\/$/, '');
+        const normalizedExcludeUrl = normalizeUrl(excludeUrl);
+        streams = streams.filter(stream => normalizeUrl(stream.url) !== normalizedExcludeUrl);
+    }
 
     context.cursor = json.data.streams.edges[json.data.streams.edges.length - 1].cursor
 
@@ -1510,4 +1634,143 @@ function extractTwitchVideoId(url) {
     return null; // Return null if no match
 }
 
-console.log('LOADED')
+
+/**
+ * Gets recommendations based on game, tags, and other criteria
+ * @param {Object} params - Recommendation parameters
+ * @param {string} params.gameId - Game ID for recommendations
+ * @param {string} params.gameName - Game name for recommendations
+ * @param {string[]} params.tags - Tags for recommendations
+ * @param {string} params.broadcasterId - Broadcaster ID to exclude
+ * @param {string} params.excludeUrl - URL to exclude from results
+ * @returns {VideoPager} Pager with recommended content
+ */
+function getRecommendationsPager(params) {
+    const { gameId, gameName, tags, broadcasterId, excludeUrl } = params;
+
+    // Build GraphQL query for recommendations
+    // If we have a specific game ID, use the directory query for that game
+    // Otherwise, use the general popular streams query
+    let gql;
+
+    if (gameId && gameName) {
+        // Use directory query for specific game
+        gql = {
+            extensions: {
+                persistedQuery: {
+                    sha256Hash: 'df4bb6cc45055237bfaf3ead608bbafb79815c7100b6ee126719fac3762ddf8b',
+                    version: 1,
+                },
+            },
+            operationName: 'DirectoryPage_Game',
+            variables: {
+                name: gameName,
+                options: {
+                    includeRestricted: ['SUB_ONLY_LIVE'],
+                    sort: 'VIEWER_COUNT',
+                    recommendationsContext: {
+                        platform: 'web',
+                    },
+                    requestID: 'RECOMMENDATIONS',
+                    freeformTags: tags.length > 0 ? tags.slice(0, MAX_RECOMMENDATION_TAGS) : null,
+                },
+                sortTypeIsRecency: false,
+                limit: RECOMMENDATION_LIMIT,
+            },
+        };
+    } else {
+        // Use general popular streams query
+        gql = {
+            extensions: {
+                persistedQuery: {
+                    sha256Hash: 'b32fa28ffd43e370b42de7d9e6e3b8a7ca310035fdbb83932150443d6b693e4d',
+                    version: 1,
+                },
+            },
+            operationName: 'BrowsePage_Popular',
+            variables: {
+                imageWidth: 50,
+                limit: RECOMMENDATION_LIMIT,
+                options: {
+                    broadcasterLanguages: ['EN'],
+                    freeformTags: tags.length > 0 ? tags.slice(0, MAX_RECOMMENDATION_TAGS) : null,
+                    includeRestricted: ['SUB_ONLY_LIVE'],
+                    recommendationsContext: {
+                        platform: 'web',
+                    },
+                    requestID: 'RECOMMENDATIONS',
+                    sort: 'RELEVANCE',
+                    tags: [],
+                },
+                platformType: 'all',
+                sortTypeIsRecency: false,
+            },
+        };
+    }
+
+    try {
+        /** @type {import("./types.d.ts").BrowsePopularResponse}*/
+        const json = callGQL(gql);
+        let streams;
+
+        // Handle different response structures based on query type
+        if (gameId && gameName && json?.data?.game?.streams?.edges) {
+
+            // DirectoryPage_Game query response
+            streams = json.data.game.streams.edges;
+        } else if (json?.data?.streams?.edges) {
+
+            // BrowsePage_Popular query response
+            streams = json.data.streams.edges;
+        } else if (gameId && gameName && json.data.game === null) {
+
+            // Game not found, fall back to popular streams
+            return getHomePagerPopular({ cursor: null, page_size: 20 }, excludeUrl);
+        } else {
+            // No streams found
+
+            return new VideoPager([], false, {});
+        }
+
+        streams = streams
+            .filter((s) => s.node.broadcaster)
+            .map((s) => {
+                let n = s.node;
+                return new PlatformVideo({
+                    id: new PlatformID(PLATFORM, n.id, config.id),
+                    name: n.title,
+                    thumbnails: new Thumbnails([new Thumbnail(n.previewImageURL, 0)]),
+                    author: new PlatformAuthorLink(
+                        new PlatformID(PLATFORM, n.broadcaster.id, config.id, PLATFORM_CLAIMTYPE),
+                        n.broadcaster.login,
+                        BASE_URL + n.broadcaster.login,
+                        n.broadcaster.profileImageURL
+                    ),
+                    uploadDate: parseInt(new Date().getTime() / 1000),
+                    duration: 0,
+                    viewCount: n.viewersCount,
+                    url: BASE_URL + n.broadcaster.login,
+                    shareUrl: BASE_URL + n.broadcaster.login,
+                    isLive: true,
+                });
+            });
+
+        // Filter out the original content and broadcaster
+        if (excludeUrl) {
+            // Normalize URLs for comparison (remove trailing slashes, convert to lowercase)
+            const normalizeUrl = (url) => url.toLowerCase().replace(/\/$/, '');
+            const normalizedExcludeUrl = normalizeUrl(excludeUrl);
+            streams = streams.filter(stream => normalizeUrl(stream.url) !== normalizedExcludeUrl);
+        }
+        if (broadcasterId) {
+            streams = streams.filter(stream => stream.author.id.value !== broadcasterId);
+        }
+        return new VideoPager(streams, false, {});
+    } catch (e) {
+        log(`Error getting recommendations: ${e.message}`);
+        return new VideoPager([], false, {});
+    }
+}
+
+log('LOADED')
+
