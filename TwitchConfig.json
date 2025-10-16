@@ -3,21 +3,18 @@
 	"description": "One of the biggest livestreaming platforms, owned by Amazon.",
 	"author": "FUTO",
 	"authorUrl": "https://futo.org",
-
 	"platformUrl": "https://twitch.tv",
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
-
-	"version": 26,
-
+	"version": 27,
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
-
 	"scriptSignature": "",
 	"scriptPublicKey": "",
-	"packages": ["Http"],
-	
+	"packages": [
+		"Http"
+	],
 	"allowEval": false,
 	"allowUrls": [
 		"gql.twitch.tv",
@@ -25,30 +22,41 @@
 		"usher.ttvnw.net",
 		"production.assets.clips.twitchcdn.net"
 	],
-	
 	"authentication": {
 		"userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Mobile Safari/537.36",
 		"loginUrl": "https://www.twitch.tv/login",
-		"headersToFind": ["Authorization"],
+		"headersToFind": [
+			"Authorization"
+		],
 		"domainHeadersToFind": {
-			".twitch.tv": ["authorization"]
+			".twitch.tv": [
+				"authorization"
+			]
 		}
 	},
-
-	"supportedClaimTypes": [14],
-	"settings": [{
-		"variable": "shouldIncludeChannelClips",
-		"name": "Show channel clips",
-		"description": "",
-		"type": "Boolean",
-		"default": "true"
-	}],
+	"supportedClaimTypes": [
+		14
+	],
+	"settings": [
+		{
+			"variable": "shouldIncludeChannelClips",
+			"name": "Show channel clips",
+			"description": "",
+			"type": "Boolean",
+			"default": "true"
+		}
+	],
 	"changelog": {
-		"25": [
-			"Fix: solve playback errors in some clips;"
+		"27": [
+			"Fix: Channel social links;",
+			"Improvement: Initial content recommendation implementation;",
+			"Improvement: Switch to CBR bitrate to resolve automatic resolution drops"
 		],
 		"26": [
 			"Fix: home error;"
+		],
+		"25": [
+			"Fix: solve playback errors in some clips;"
 		]
 	}
 }
