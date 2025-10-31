@@ -7,7 +7,7 @@
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 27,
+	"version": 28,
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
 	"scriptSignature": "",
@@ -47,6 +47,9 @@
 		}
 	],
 	"changelog": {
+		"28": [
+			"Improvement: Add 1440p stream support for logged-in users in supported regions;"
+		],
 		"27": [
 			"Fix: Channel social links;",
 			"Improvement: Initial content recommendation implementation;",

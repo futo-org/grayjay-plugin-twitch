@@ -379,7 +379,7 @@ function getSavedVideo(url) {
         {
             extensions: {
                 persistedQuery: {
-                    sha256Hash: '0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712',
+                    sha256Hash: 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9',
                     version: 1,
                 },
             },
@@ -388,6 +388,7 @@ function getSavedVideo(url) {
                 isLive: false,
                 isVod: true,
                 login: '',
+                platform: 'web',
                 playerType: 'site',
                 vodID: id,
             },
@@ -419,7 +420,7 @@ function getSavedVideo(url) {
 
     const spat = hls_json.data.videoPlaybackAccessToken
 
-    const hls_url = `https://usher.ttvnw.net/vod/${id}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
+    const hls_url = `https://usher.ttvnw.net/vod/${id}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
 
     checkHLS(hls_url)
 
@@ -536,7 +537,7 @@ function getLiveVideo(url, video_details = true) {
         {
             extensions: {
                 persistedQuery: {
-                    sha256Hash: '0828119ded1c13477966434e15800ff57ddacf13ba1911c129dc2200705b0712',
+                    sha256Hash: 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9',
                     version: 1,
                 },
             },
@@ -545,7 +546,8 @@ function getLiveVideo(url, video_details = true) {
                 isLive: true,
                 isVod: false,
                 login: login,
-                playerType: 'frontpage',
+                platform: 'web',
+                playerType: 'site',
                 vodID: '',
             },
             query: 'query PlaybackAccessToken($login: String! $isLive: Boolean! $vodID: ID! $isVod: Boolean! $playerType: String!) { streamPlaybackAccessToken(channelName: $login params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isVod) { value signature } }',
@@ -583,7 +585,7 @@ function getLiveVideo(url, video_details = true) {
         throw new UnavailableException('Unable to get playback access token')
     }
 
-    const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=avc1&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
+    const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
 
     checkHLS(hls_url)
 
