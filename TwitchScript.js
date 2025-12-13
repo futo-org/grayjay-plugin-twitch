@@ -425,12 +425,6 @@ function getSavedVideo(url) {
 
     const gql2 = [
         {
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '49b5b8f268cdeb259d75b58dcb0c1a748e3b575003448a2333dc5cdafd49adad',
-                    version: 1,
-                },
-            },
             operationName: 'VideoMetadata',
             variables: {
                 videoID: id,
