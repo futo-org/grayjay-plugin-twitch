@@ -51,7 +51,7 @@
 			"Fix: Playing clips;",
 			"Improvement: Support subscriber only content;",
 			"Improvement: Remove dead code and improve performance;",
-			"Improvement: Optimize VOD loading from channel pages"
+			"Improvement: Optimize VOD loading from channel pages;"
 		],
 		"30": [
 			"Fix: Playing VODs;"
