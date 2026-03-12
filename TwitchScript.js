@@ -273,24 +273,47 @@ function getClippedVideo(url) {
                 "platform": "web",
                 "slug": clipSlug
             },
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": "6fd3af2b22989506269b9ac02dd87eb4a6688392d67d94e41a6886f1e9f5c00f"
+            "query": `query VideoAccessToken_Clip($slug: ID!) {
+                clip(slug: $slug) {
+                    playbackAccessToken(params: {platform: "web", playerType: "site"}) {
+                        signature
+                        value
+                    }
+                    videoQualities {
+                        frameRate
+                        quality
+                        sourceURL
+                    }
                 }
-            }
+            }`
         },
         {
             "operationName": "ShareClipRenderStatus",
             "variables": {
                 "slug": clipSlug
             },
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": "f130048a462a0ac86bb54d653c968c514e9ab9ca94db52368c1179e97b0f16eb"
+            "query": `query ShareClipRenderStatus($slug: ID!) {
+                clip(slug: $slug) {
+                    id
+                    title
+                    thumbnailURL
+                    createdAt
+                    durationSeconds
+                    viewCount
+                    broadcaster {
+                        id
+                        displayName
+                        login
+                        profileImageURL(width: 150)
+                    }
+                    curator {
+                        displayName
+                    }
+                    game {
+                        displayName
+                    }
                 }
-            }
+            }`
         },
     ];
 
@@ -303,10 +326,11 @@ function getClippedVideo(url) {
         throw new UnavailableException('Clip not found or unavailable');
     }
 
-    const qualities = gqlResponses[0]?.data?.clip?.videoQualities ?? [];
+    const clipPlayback = gqlResponses[0]?.data?.clip;
+    const qualities = clipPlayback?.videoQualities ?? [];
 
     const sources = qualities.map(quality => {
-        const sourceUrl = `${quality.sourceURL}?sig=${clip.playbackAccessToken.signature}&token=${encodeURIComponent(clip.playbackAccessToken.value)}`
+        const sourceUrl = `${quality.sourceURL}?sig=${clipPlayback.playbackAccessToken.signature}&token=${encodeURIComponent(clipPlayback.playbackAccessToken.value)}`
         return new VideoUrlSource({ 
             name: `${quality.quality}p`, 
             duration: clip.durationSeconds, 
