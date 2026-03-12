@@ -1285,6 +1285,42 @@ function getChannelPager(context) {
     const edges = videosJson?.data?.user?.videos?.edges ?? [];
     const clips = clipsJson?.data?.user?.clips?.edges ?? [];
 
+    // Check which videos are subscriber-only by batch-fetching playback tokens
+    const videoEdges = edges.filter(e => e.node.owner != null);
+    const subscriberOnlyIds = new Set();
+
+    if (videoEdges.length > 0) {
+        const tokenGql = videoEdges.map(edge => ({
+            operationName: 'PlaybackAccessToken',
+            variables: {
+                isLive: false,
+                isVod: true,
+                login: '',
+                platform: 'web',
+                playerType: 'site',
+                vodID: edge.node.id,
+            },
+            query: 'query PlaybackAccessToken($login: String! $isLive: Boolean! $vodID: ID! $isVod: Boolean! $playerType: String!) { streamPlaybackAccessToken(channelName: $login params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isVod) { value signature } }',
+        }));
+
+        try {
+            const tokenResponses = callGQL(tokenGql, true);
+            const responses = Array.isArray(tokenResponses) ? tokenResponses : [tokenResponses];
+            for (let i = 0; i < responses.length; i++) {
+                const token = responses[i]?.data?.videoPlaybackAccessToken;
+                if (token) {
+                    const tokenValue = JSON.parse(token.value);
+                    const restricted = tokenValue?.chansub?.restricted_bitrates ?? [];
+                    if (restricted.includes('chunked')) {
+                        subscriberOnlyIds.add(videoEdges[i].node.id);
+                    }
+                }
+            }
+        } catch (e) {
+            log('Failed to check subscriber-only status: ' + e);
+        }
+    }
+
     let videos = [...edges,...clips].filter(edge => {
         // Filter out items without owner/broadcaster
         if(edge.node.__typename == 'Clip') {
@@ -1309,6 +1345,22 @@ function getChannelPager(context) {
         const uploadDate = edge?.node?.publishedAt ?? edge?.node?.createdAt ?? "";
         const duration = edge?.node?.lengthSeconds ?? edge?.node?.durationSeconds ?? "";
         const thumbnail = edge?.node?.previewThumbnailURL ?? edge?.node?.thumbnailURL ?? "";
+
+        if (subscriberOnlyIds.has(edge.node.id)) {
+            return new PlatformLockedContent({
+                id: new PlatformID(PLATFORM, edge.node.id, config.id),
+                name: edge.node.title,
+                author: new PlatformAuthorLink(
+                    new PlatformID(PLATFORM, owner.id, config.id, PLATFORM_CLAIMTYPE),
+                    owner.displayName,
+                    BASE_URL + owner.login,
+                    owner.profileImageURL
+                ),
+                datetime: parseInt(new Date(uploadDate).getTime() / 1000),
+                lockDescription: 'Subscriber only',
+                unlockUrl: `https://subs.twitch.tv/${owner.login}`,
+            });
+        }
 
         return new PlatformVideo({
             id: new PlatformID(PLATFORM, edge.node.id, config.id),
