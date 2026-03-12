@@ -31,8 +31,6 @@ const MAX_RECOMMENDATION_TAGS = 3;
 const RECOMMENDATION_LIMIT = 20;
 
 //* Global Variables
-let CLIENT_SESSION_ID = ''
-let CLIENT_VERSION = ''
 let INTEGRITY = ''
 
 let config = {}
@@ -45,8 +43,6 @@ let _settings = {};
 source.enable = function (conf, settings) {
     config = conf ?? {}
     _settings = settings ?? {};
-    CLIENT_VERSION = `3e62b6e7-8e71-47f1-a2b3-0d661abad039`
-
     const resp = http.POST('https://gql.twitch.tv/integrity', '', {
         'User-Agent': USER_AGENT,
         Accept: '*/*',
@@ -441,11 +437,7 @@ function getSavedVideo(url) {
         throw new UnavailableException('Video playback access token unavailable. Video may be subscriber-only, deleted, or geo-blocked.')
     }
 
-    const hls_url = `https://usher.ttvnw.net/vod/${id}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
-
-    checkHLS(hls_url)
-
-    const sources = [new HLSSource({ name: 'source', duration: 0, url: hls_url })]
+    const hls_url = buildVodHlsUrl(id, spat.signature, spat.value);
 
     const gql2 = [
         {
@@ -464,38 +456,22 @@ function getSavedVideo(url) {
 
     const vm = video_metadata.data
 
-    const result = new PlatformVideoDetails({
-        id: new PlatformID(PLATFORM, id, config.id),
-        name: vm.video.title,
-        thumbnails: new Thumbnails([new Thumbnail(vm.video.previewThumbnailURL, 0)]),
-        author: new PlatformAuthorLink(
-            new PlatformID(PLATFORM, cvc.owner.id, config.id, PLATFORM_CLAIMTYPE),
-            cvc.owner.login,
-            BASE_URL + cvc.owner.login,
-            cvc.owner.profileImageURL
-        ),
-        uploadDate: parseInt(new Date(vm.video.publishedAt).getTime() / 1000),
+    return buildVodVideoDetails({
+        id: id,
+        title: vm.video.title,
+        thumbnail: vm.video.previewThumbnailURL,
+        ownerId: cvc.owner.id,
+        ownerDisplayName: cvc.owner.login,
+        ownerLogin: cvc.owner.login,
+        ownerProfileImageURL: cvc.owner.profileImageURL,
+        uploadDate: vm.video.publishedAt,
         duration: vm.video.lengthSeconds,
         viewCount: vm.video.viewCount,
         url: url,
-        isLive: false,
-        description: vm.video.description !== null ? vm.video.description : '',
-        video: new VideoSourceDescriptor(sources),
+        description: vm.video.description,
+        hlsUrl: hls_url,
+        game: vm.video.game,
     });
-
-    const vodMetadata = {
-        game: vm.video.game
-    };
-
-    if (IS_TESTING) {
-        source.getContentRecommendations(url, vodMetadata);
-    } else {
-        result.getContentRecommendations = function () {
-            return source.getContentRecommendations(url, vodMetadata);
-        };
-    }
-
-    return result;
 }
 
 /**
@@ -601,8 +577,6 @@ function getLiveVideo(url, video_details = true) {
 
     const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
 
-    checkHLS(hls_url)
-
     const hls_source = new HLSSource({ name: 'live', duration: 0, url: hls_url })
 
     const pv = new PlatformVideo({
@@ -696,20 +670,6 @@ source.getLiveEvents = function (url) {
                 channelLogin: login,
             },
         },
-        /*
-        {
-            query: '#import "twilight/features/message/fragments/message-content-fragment.gql" query MessageBufferChatHistory($channelLogin: String! $channelID: ID) { channel(name: $channelLogin) { id recentChatMessages { ...historicalMessage } } } fragment chatHistoryParentMessage on Message { id content { text } deletedAt sender { id login displayName } } fragment historicalMessage on Message { id deletedAt sentAt content { ...messageContent } parentMessage { ...chatHistoryParentMessage } sender { id login chatColor displayName __typename } senderBadges(channelID: $channelID) { setID version id } }',
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '432ef3ec504a750d797297630052ec7c775f571f6634fdbda255af9ad84325ae',
-                    version: 1,
-                },
-            },
-            operationName: 'MessageBufferChatHistory',
-            variables: {
-                channelLogin: login,
-            },
-        }*/
     ]
 
     const json = callGQL(gql)
@@ -718,11 +678,7 @@ source.getLiveEvents = function (url) {
     const ChannelShellResponse = json[0]
     const userOrError = ChannelShellResponse.data.userOrError
 
-    /** @type {import("./types.d.ts").RecentChatsResponse} */
-    //const RecentChatsResponse = json[2]
-    const chats = []; /*RecentChatsResponse.data.channel.recentChatMessages.map(
-        (chat) => new LiveEventComment(chat.sender.login, chat.content.text, '', chat.sender.chatColor)
-    )*/
+    const chats = [];
 
     /** @type {import("./types.d.ts").BadgeListResponse} */
     const BadgeListResponse = json[1]
@@ -939,11 +895,7 @@ function callGQL(gql, use_authenticated = false, parse = true) {
             Origin: 'https://www.twitch.tv',
             Referer: 'https://www.twitch.tv/',
             'Client-Id': CLIENT_ID,
-            // "Client-Version": CLIENT_VERSION,
-            // "Client-Session-Id": CLIENT_SESSION_ID,
             'Client-Integrity': INTEGRITY,
-            // "X-Device-Id": '',
-            // "Device-Id": '',
         },
         use_authenticated
     )
@@ -970,19 +922,6 @@ function callGQL(gql, use_authenticated = false, parse = true) {
     }
 
     return json
-}
-
-/**
- * Checks if the HLS stream is available
- * @param {string} url
- * @returns {void}
- * @throws {UnavailableException}
- */
-function checkHLS(url) {
-    const resp = http.GET(url, { 'User-Agent': USER_AGENT })
-    if (!resp.isOk) {
-        throw new UnavailableException('This content is restricted to subscribers')
-    }
 }
 
 //* Pagers
@@ -1075,78 +1014,6 @@ function getHomePagerPopular(context, excludeUrl = null) {
 }
 
 /**
- * Gets a pager for the homepage
- * @param {import("./types.d.ts").HomeContext} context the context params
- * @returns {HomePagerPersonalSections} returns the homepage pager
- */
-function getHomePagerPersonalSections(context) {
-    const gql = {
-        query: 'query PersonalSections( $input: PersonalSectionInput! $creatorAnniversariesFeature: Boolean! ) { personalSections(input: $input) { type title { ...personalSectionTitle } items { ...personalSectionItem } } } fragment personalSectionTitle on PersonalSectionTitle { localizedFallback localizedTokens { ... on PersonalSectionTextToken { value } ... on User { id login displayName } } } fragment personalSectionItem on PersonalSectionChannel { trackingID promotionsCampaignID user { ...personalSectionItemUser } label content { ...personalSectionsStream } } fragment personalSectionItemUser on User { id login displayName profileImageURL(width: 70) primaryColorHex broadcastSettings { id title } channel @include(if: $creatorAnniversariesFeature) { id activeCreatorEventCelebration { id } } } fragment personalSectionsStream on Stream { id previewImageURL(width: 320 height: 180) broadcaster { id broadcastSettings { id title } } viewersCount game { id displayName name } type }',
-        operationName: 'PersonalSections',
-        variables: {
-            creatorAnniversariesFeature: false,
-            input: {
-                recommendationContext: {
-                    categoryName: null,
-                    channelName: null,
-                    clientApp: 'twilight',
-                    lastCategoryName: null,
-                    lastChannelName: null,
-                    location: 'home',
-                    pageviewContent: null,
-                    pageviewContentType: null,
-                    pageviewLocation: 'home',
-                    pageviewMedium: null,
-                    platform: 'web',
-                    previousPageviewContent: null,
-                    previousPageviewContentType: null,
-                    previousPageviewLocation: null,
-                    previousPageviewMedium: null,
-                    referrerDomain: null,
-                    viewportHeight: 640,
-                    viewportWidth: 640,
-                },
-                sectionInputs: ['RECOMMENDED_SECTION'],
-            },
-        },
-        extensions: {
-            persistedQuery: {
-                sha256Hash: '807e3cce07a1cef5c772bbc46c12ead2898edd043ad4dd2236707f6f7995769c',
-                version: 1,
-            },
-        },
-    }
-
-    /** @type {import("./types.d.ts").PersonalSectionsResponse}*/
-    const json = callGQL(gql, true)
-
-    const initialStreams = json.data.personalSections[0].items.map((item) => personalSectionToPlatformVideo(item))
-
-    return new HomePagerPersonalSections(context, initialStreams)
-}
-
-/**
- * Converts a twitch node to a platform video
- * @param {import("./types.d.ts").PersonalSection} ps the twitch stream node
- * @returns {PlatformVideo} returns the platform video
- * @throws {ScriptException}
- */
-function personalSectionToPlatformVideo(ps) {
-    return new PlatformVideo({
-        id: new PlatformID(PLATFORM, ps.content.id, config.id),
-        name: ps.content.broadcaster.broadcastSettings.title,
-        thumbnails: new Thumbnails([new Thumbnail(ps.content.previewImageURL, 0)]),
-        author: new PlatformAuthorLink(new PlatformID(PLATFORM, ps.user.id, config.id, PLATFORM_CLAIMTYPE), ps.user.displayName, BASE_URL + ps.user.login, ps.user.profileImageURL),
-        uploadDate: parseInt(new Date().getTime() / 1000),
-        duration: 0,
-        viewCount: ps.content.viewersCount,
-        url: BASE_URL + ps.user.login,
-        shareUrl: BASE_URL + ps.user.login,
-        isLive: true,
-    })
-}
-
-/**
  * Gets a comment pager
  * @param {import("./types").HomeContext & {url: string; id: number|null}} context the comment context
  * @returns {ExtendableCommentPager} returns the comment pager
@@ -1194,6 +1061,11 @@ function getChannelPager(context) {
                             publishedAt
                             lengthSeconds
                             viewCount
+                            description
+                            game {
+                                id
+                                displayName
+                            }
                             owner {
                                 id
                                 displayName
@@ -1285,9 +1157,10 @@ function getChannelPager(context) {
     const edges = videosJson?.data?.user?.videos?.edges ?? [];
     const clips = clipsJson?.data?.user?.clips?.edges ?? [];
 
-    // Check which videos are subscriber-only by batch-fetching playback tokens
+    // Batch-fetch playback tokens for videos to detect subscriber-only and build HLS URLs
     const videoEdges = edges.filter(e => e.node.owner != null);
     const subscriberOnlyIds = new Set();
+    const videoTokens = {};
 
     if (videoEdges.length > 0) {
         const tokenGql = videoEdges.map(edge => ({
@@ -1311,8 +1184,11 @@ function getChannelPager(context) {
                 if (token) {
                     const tokenValue = JSON.parse(token.value);
                     const restricted = tokenValue?.chansub?.restricted_bitrates ?? [];
+                    const videoId = videoEdges[i].node.id;
                     if (restricted.includes('chunked')) {
-                        subscriberOnlyIds.add(videoEdges[i].node.id);
+                        subscriberOnlyIds.add(videoId);
+                    } else {
+                        videoTokens[videoId] = token;
                     }
                 }
             }
@@ -1359,6 +1235,27 @@ function getChannelPager(context) {
                 datetime: parseInt(new Date(uploadDate).getTime() / 1000),
                 lockDescription: 'Subscriber only',
                 unlockUrl: `https://subs.twitch.tv/${owner.login}`,
+            });
+        }
+
+        // Return PlatformVideoDetails with HLS source if we have the playback token
+        const token = videoTokens[edge.node.id];
+        if (token && edge.node.__typename !== 'Clip') {
+            return buildVodVideoDetails({
+                id: edge.node.id,
+                title: edge.node.title,
+                thumbnail: thumbnail,
+                ownerId: owner.id,
+                ownerDisplayName: owner.displayName,
+                ownerLogin: owner.login,
+                ownerProfileImageURL: owner.profileImageURL,
+                uploadDate: uploadDate,
+                duration: duration,
+                viewCount: edge.node.viewCount,
+                url: contentUrl,
+                description: edge.node.description,
+                hlsUrl: buildVodHlsUrl(edge.node.id, token.signature, token.value),
+                game: edge.node.game,
             });
         }
 
@@ -1522,21 +1419,6 @@ class HomePagerPopular extends VideoPager {
     }
 }
 
-class HomePagerPersonalSections extends VideoPager {
-    /**
-     * @param {import("./types.d.ts").PagerBaseContext} context the context
-     * @param {PlatformVideo[]} results the initial results
-     */
-    constructor(context, results) {
-        super(results, results.length >= context.page_size, context)
-    }
-
-    nextPage() {
-        this.context.page = this.context.page + 1
-        return getHomePagerPersonalSections(this.context)
-    }
-}
-
 class ChannelVideoPager extends VideoPager {
     /**
      * @param {import("./types.d.ts").URLContext} context the context
@@ -1563,21 +1445,6 @@ class SearchPagerAll extends VideoPager {
 
     nextPage() {
         return null
-    }
-}
-
-class SearchPagerVideos extends VideoPager {
-    /**
-     * @param {import("./types").SearchContext} context the query params
-     * @param {PlatformVideo[]} results the initial results
-     */
-    constructor(context, results) {
-        super(results, results.length >= context.page_size, context)
-    }
-
-    nextPage() {
-        this.context.page = this.context.page + 1
-        return getSearchPagerTracks(this.context)
     }
 }
 
@@ -1930,6 +1797,45 @@ function getRecommendationsPager(params) {
         log(`Error getting recommendations: ${e.message}`);
         return new VideoPager([], false, {});
     }
+}
+
+
+function buildVodHlsUrl(vodId, signature, tokenValue) {
+    return `https://usher.ttvnw.net/vod/${vodId}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${signature}&supported_codecs=h265,h264&token=${encodeURIComponent(tokenValue)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`;
+}
+
+function buildVodVideoDetails({ id, title, thumbnail, ownerId, ownerDisplayName, ownerLogin, ownerProfileImageURL, uploadDate, duration, viewCount, url, description, hlsUrl, game }) {
+    const sources = [new HLSSource({ name: 'source', duration: 0, url: hlsUrl })];
+    const result = new PlatformVideoDetails({
+        id: new PlatformID(PLATFORM, id, config.id),
+        name: title,
+        thumbnails: new Thumbnails([new Thumbnail(thumbnail, 0)]),
+        author: new PlatformAuthorLink(
+            new PlatformID(PLATFORM, ownerId, config.id, PLATFORM_CLAIMTYPE),
+            ownerDisplayName,
+            BASE_URL + ownerLogin,
+            ownerProfileImageURL
+        ),
+        uploadDate: parseInt(new Date(uploadDate).getTime() / 1000),
+        duration: duration,
+        viewCount: viewCount,
+        url: url,
+        isLive: false,
+        description: description ?? '',
+        video: new VideoSourceDescriptor(sources),
+    });
+
+    const vodMetadata = { game: game };
+
+    if (IS_TESTING) {
+        source.getContentRecommendations(url, vodMetadata);
+    } else {
+        result.getContentRecommendations = function () {
+            return source.getContentRecommendations(url, vodMetadata);
+        };
+    }
+
+    return result;
 }
 
 log('LOADED')
