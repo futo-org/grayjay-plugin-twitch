@@ -437,6 +437,10 @@ function getSavedVideo(url) {
         throw new UnavailableException('Video playback access token unavailable. Video may be subscriber-only, deleted, or geo-blocked.')
     }
 
+    if (isRestrictedToSubscriberOnly(spat)) {
+        throw new UnavailableException('This video is only available to subscribers.')
+    }
+
     const hls_url = buildVodHlsUrl(id, spat.signature, spat.value);
 
     const gql2 = [
@@ -1182,10 +1186,8 @@ function getChannelPager(context) {
             for (let i = 0; i < responses.length; i++) {
                 const token = responses[i]?.data?.videoPlaybackAccessToken;
                 if (token) {
-                    const tokenValue = JSON.parse(token.value);
-                    const restricted = tokenValue?.chansub?.restricted_bitrates ?? [];
                     const videoId = videoEdges[i].node.id;
-                    if (restricted.includes('chunked')) {
+                    if (isRestrictedToSubscriberOnly(token)) {
                         subscriberOnlyIds.add(videoId);
                     } else {
                         videoTokens[videoId] = token;
@@ -1799,6 +1801,12 @@ function getRecommendationsPager(params) {
     }
 }
 
+
+function isRestrictedToSubscriberOnly(token) {
+    const tokenValue = JSON.parse(token.value);
+    const restricted = tokenValue?.chansub?.restricted_bitrates ?? [];
+    return restricted.includes('chunked');
+}
 
 function buildVodHlsUrl(vodId, signature, tokenValue) {
     return `https://usher.ttvnw.net/vod/${vodId}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${signature}&supported_codecs=h265,h264&token=${encodeURIComponent(tokenValue)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`;
