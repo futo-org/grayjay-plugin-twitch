@@ -9,7 +9,7 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 const OLD_REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/videos\/(\d+)(\?.*)?$/
 const REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9-_]+\/video\/(\d+)(\?.*)?$/
 
-const REGEX_URL_CHANNEL = /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?!login|signup|directory|p\/|search|settings|subscriptions|inventory|friends|help|jobs|partner|moderation|store|bits|subs|creators|ads|extensions|prime|giftcard|turbo)([a-zA-Z0-9-_]+)(?:\/.*)?$/;
+const REGEX_URL_CHANNEL = /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?!login|signup|directory|p\/|search|settings|subscriptions|inventory|friends|help|jobs|partner|moderation|store|bits|subs|creators|ads|extensions|prime|giftcard|turbo)([a-zA-Z0-9-_]+)(?:[?/].*)?$/;
 
 const REGEX_URL_CHANNEL_CLIPS_FILTER = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9_-]+\/clips\/?\?.*$/
 
