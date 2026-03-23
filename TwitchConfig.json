@@ -23,7 +23,7 @@
 		"production.assets.clips.twitchcdn.net"
 	],
 	"authentication": {
-		"userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Mobile Safari/537.36",
+		"userAgent": null,
 		"loginUrl": "https://www.twitch.tv/login",
 		"headersToFind": [
 			"Authorization"
@@ -33,6 +33,19 @@
 				"authorization"
 			]
 		}
+	},
+	"authenticationDesktop": {
+		"userAgent": null,
+		"loginUrl": "https://www.twitch.tv/login",
+		"headersToFind": [
+			"Authorization"
+		],
+		"domainHeadersToFind": {
+			".twitch.tv": [
+				"authorization"
+			]
+		},
+		"useMobileEmulation": false
 	},
 	"supportedClaimTypes": [
 		14
