@@ -2,7 +2,7 @@
 	"name": "Twitch (Beta)",
 	"description": "One of the biggest livestreaming platforms, owned by Amazon.",
 	"author": "FUTO",
-	"authorUrl": "https://futo.org",
+	"authorUrl": "https://futo.tech",
 	"platformUrl": "https://twitch.tv",
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
