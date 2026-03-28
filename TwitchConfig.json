@@ -2,12 +2,12 @@
 	"name": "Twitch (Beta)",
 	"description": "One of the biggest livestreaming platforms, owned by Amazon.",
 	"author": "FUTO",
-	"authorUrl": "https://futo.org",
+	"authorUrl": "https://futo.tech",
 	"platformUrl": "https://twitch.tv",
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 32,
+	"version": 33,
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
 	"scriptSignature": "",
@@ -47,6 +47,9 @@
 		}
 	],
 	"changelog": {
+		"33": [
+			"Fix: Channel with query strings;"
+		],
 		"32": [
 			"Fix: Detect subscriber-only VODs and show proper error instead of broken playback;"
 		],

@@ -4,12 +4,16 @@ const CLIENT_ID = 'ue6666qo983tsx6so1t0vnawi233wa' // old: kimne78kx3ncx6brgo4mv
 const GQL_URL = 'https://gql.twitch.tv/gql#origin=twilight'
 const PLATFORM = 'Twitch'
 const PLATFORM_CLAIMTYPE = 14;
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
+const IS_DESKTOP = bridge.buildPlatform === "desktop";
+const USER_AGENT_FALLBACK = IS_DESKTOP
+	? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.200 Safari/537.36'
+	: 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.7559.133 Mobile Safari/537.36';
+const getUserAgent = () => bridge.authUserAgent ?? bridge.captchaUserAgent ?? USER_AGENT_FALLBACK;
 
 const OLD_REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/videos\/(\d+)(\?.*)?$/
 const REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9-_]+\/video\/(\d+)(\?.*)?$/
 
-const REGEX_URL_CHANNEL = /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?!login|signup|directory|p\/|search|settings|subscriptions|inventory|friends|help|jobs|partner|moderation|store|bits|subs|creators|ads|extensions|prime|giftcard|turbo)([a-zA-Z0-9-_]+)(?:\/.*)?$/;
+const REGEX_URL_CHANNEL = /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?!login|signup|directory|p\/|search|settings|subscriptions|inventory|friends|help|jobs|partner|moderation|store|bits|subs|creators|ads|extensions|prime|giftcard|turbo)([a-zA-Z0-9-_]+)(?:[?/].*)?$/;
 
 const REGEX_URL_CHANNEL_CLIPS_FILTER = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9_-]+\/clips\/?\?.*$/
 
@@ -44,7 +48,7 @@ source.enable = function (conf, settings) {
     config = conf ?? {}
     _settings = settings ?? {};
     const resp = http.POST('https://gql.twitch.tv/integrity', '', {
-        'User-Agent': USER_AGENT,
+        'User-Agent': getUserAgent(),
         Accept: '*/*',
         DNT: '1',
         Host: 'gql.twitch.tv',
@@ -892,7 +896,7 @@ function callGQL(gql, use_authenticated = false, parse = true) {
         GQL_URL,
         JSON.stringify(gql),
         {
-            'User-Agent': USER_AGENT,
+            'User-Agent': getUserAgent(),
             Accept: '*/*',
             DNT: '1',
             Host: 'gql.twitch.tv',
