@@ -587,12 +587,14 @@ function getLiveVideo(url, video_details = true) {
 
     const hls_source = new HLSSource({ name: 'live', duration: 0, url: hls_url })
 
+	const cacheBust = Math.floor(Date.now() / 300000); // refresh every 5 min
+
     const pv = new PlatformVideo({
         id: new PlatformID(PLATFORM, sm.id, config.id),
         name: sm.lastBroadcast.title,
         thumbnails: new Thumbnails([
-            new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-1280x720.jpg`, 720),
-            new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-854x480.jpg`, 480),
+            new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-1280x720.jpg?t=${cacheBust}`, 720),
+            new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-854x480.jpg?t=${cacheBust}`, 480),
         ]),
         author: new PlatformAuthorLink(new PlatformID(PLATFORM, sm.channel.id, config.id, PLATFORM_CLAIMTYPE), login, url, sm.profileImageURL),
         uploadDate: parseInt(new Date(ul.stream.createdAt).getTime() / 1000),
