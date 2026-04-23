@@ -7,7 +7,7 @@
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 33,
+	"version": 34,
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
 	"scriptSignature": "",
@@ -100,6 +100,15 @@
 		}
 	],
 	"changelog": {
+		"34": [
+			"Fix: Update thumbnails of livestreams after some time;",
+			"Fix: Bypass Twitch livestream pre-roll;",
+			"Fix: Show a clear error for channels that no longer exist;",
+			"Performance: persist integrity token to state;",
+			"Feature: Show past livestream chats;",
+			"Feature: Support channel panel links in channel About tab (opt-in in plugin settings);",
+			"Feature: Add browser impersonation support (opt-in in plugin settings);"
+		],
 		"33": [
 			"Fix: Channel with query strings;"
 		],
