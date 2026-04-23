@@ -190,6 +190,18 @@ source.getChannel = function (url) {
         },
     ]
 
+    // Opt-in: fetch user-authored channel-page panels. Complements socialMedias;
+    // some channels (e.g. riotgames) keep most of their links in panels rather
+    // than in Twitch's curated socialMedias list. Non-persisted query works.
+    const includePanels = !!_settings?.includeChannelPanels;
+    if (includePanels) {
+        gql.push({
+            operationName: 'ChannelPanels',
+            query: 'query ChannelPanels($login: String!) { user(login: $login) { id panels { ... on DefaultPanel { id title linkURL } } } }',
+            variables: { login: login },
+        });
+    }
+
     const json = callGQL(gql)
 
     /** @type {import("./types.d.ts").ChannelAboutResponse} */
@@ -200,21 +212,41 @@ source.getChannel = function (url) {
     const shell_resp = json[1]
     const shell = shell_resp.data.userOrError
 
-    const links = Object.fromEntries(
-        user?.channel?.socialMedias?.filter(s => s.url).map(s => {
-            let key;
-            if (s.name) {
-                key = s.name.charAt(0).toUpperCase() + s.name.slice(1);
-            } else {
-                try {
-                    key = new URL(s.url).hostname.replace('www.', '') || s.url;
-                } catch {
-                    key = s.url;
-                }
-            }
-            return [key, s.url];
-        }) ?? []
-    );
+    const panels = includePanels ? (json[2]?.data?.user?.panels ?? []) : [];
+
+    // Normalize URL for dedup — lowercase + strip trailing slash. Users often
+    // have the same link as both a curated socialMedias entry AND a panel.
+    const normUrl = u => (u ?? '').toLowerCase().replace(/\/+$/, '');
+    const links = {};
+    const seenUrls = new Set();
+
+    const addLink = (rawKey, url) => {
+        if (!url) return;
+        const n = normUrl(url);
+        if (seenUrls.has(n)) return;
+        seenUrls.add(n);
+        let key = rawKey || (() => {
+            try { return new URL(url).hostname.replace('www.', '') || url; }
+            catch { return url; }
+        })();
+        // Resolve title collisions (panels sometimes duplicate labels).
+        if (links[key]) {
+            let i = 2;
+            while (links[`${key} (${i})`]) i++;
+            key = `${key} (${i})`;
+        }
+        links[key] = url;
+    };
+
+    // Prefer `title` (user-curated display name, e.g. "Twitter" even when name is "x")
+    // over capitalized `name`. Falls through addLink's hostname fallback if both absent.
+    for (const s of user?.channel?.socialMedias ?? []) {
+        const key = s.title || (s.name ? s.name.charAt(0).toUpperCase() + s.name.slice(1) : null);
+        addLink(key, s.url);
+    }
+    for (const p of panels) {
+        addLink(p?.title, p?.linkURL);
+    }
 
     return new PlatformChannel({
         id: new PlatformID(PLATFORM, user.id, config.id, PLATFORM_CLAIMTYPE),

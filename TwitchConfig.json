@@ -52,6 +52,13 @@
 			"default": "true"
 		},
 		{
+			"variable": "includeChannelPanels",
+			"name": "Include channel panel links",
+			"description": "Merge links from the channel's About panels (may include sponsored / affiliate links).",
+			"type": "Boolean",
+			"default": "false"
+		},
+		{
 			"variable": "verboseNotifications",
 			"name": "Verbose Notifications",
 			"description": "Show toast notifications for plugin trace messages and failed requests.",
