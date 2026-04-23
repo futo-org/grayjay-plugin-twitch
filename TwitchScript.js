@@ -491,7 +491,7 @@ function getSavedVideo(url) {
 function getLiveVideo(url, video_details = true) {
     // get whatever is after the last slash in twitch.tv/_____/
     const login = extractChannelId(url);
-    
+
     const gql_for_metadata = [
         {
             operationName: 'StreamMetadata',
@@ -1563,12 +1563,8 @@ function searchChannelToPlatformChannel(sc) {
 
 function extractChannelId(url) {
     const match = url.match(REGEX_URL_CHANNEL);
-
-    if (match && match[1]) {
-        return match[1];
-    } else {
-        console.log("Channel ID not found.");
-    }
+    if (match && match[1]) return match[1];
+    throw new ScriptException(`Could not extract channel login from URL: ${url}`);
 }
 
 /**
