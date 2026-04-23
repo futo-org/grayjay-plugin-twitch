@@ -233,7 +233,6 @@ source.getChannelContents = function (url) {
 
 source.getChannelTemplateByClaimMap = () => {
     return {
-        //SoundCloud
         14: {
             0: BASE_URL + "{{CLAIMVALUE}}"
         }
@@ -443,7 +442,6 @@ function getSavedVideo(url) {
     // get whatever is after the last slash in twitch.tv/videos/____/
     const id = extractTwitchVideoId(url)
 
-    // query as written: '# This query name is VERY IMPORTANT. # # There is code in twilight-apollo to split links such that # this query is NOT batched in an effort to retain snappy TTV. query PlaybackAccessToken($login: String! $isLive: Boolean! $vodID: ID! $isVod: Boolean! $playerType: String!) { streamPlaybackAccessToken(channelName: $login params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isVod) { value signature } }'
     const gql1 = [
         {
             extensions: {
@@ -624,7 +622,6 @@ function getLiveVideo(url, video_details = true) {
     }
 
     if (ul?.stream === null) {
-        // log('Channel is not live:' + JSON.stringify(use_live, null, 2))
         throw new UnavailableException('Channel is not live')
     }
 
