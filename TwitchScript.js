@@ -649,6 +649,9 @@ source.getLiveChatWindow = function (url) {
         removeElementsInterval: [".consent-banner"]
     };
 }
+source.getVODEvents = function (url) {
+    return new TwitchVODEventPager(extractTwitchVideoId(url));
+}
 source.getLiveEvents = function (url) {
 
     const login = extractChannelId(url);
@@ -834,6 +837,81 @@ class TwitchLiveEventPager extends LiveEventPager {
         this.results = [...this.events]
         this.events = []
         return this
+    }
+}
+
+class TwitchVODEventPager extends LiveEventPager {
+    /**
+     * @param {string} videoId
+     */
+    constructor(videoId) {
+        super([], true);
+        this.videoId = videoId;
+        this.nextRequest = 1000;
+        this._cached = [];
+        this._fetchedAt = -1;
+        this._cacheMaxMs = -1;
+    }
+
+    nextPage(ms) {
+        const msNum = ms ?? 0;
+        // Grayjay Android drops events with time >= msNum + 1500 (LiveChatManager.kt drip-feed window).
+        // Keep in sync if that filter changes.
+        const windowEnd = msNum + 1500;
+
+        // Cache is authoritative for [_fetchedAt, _cacheMaxMs]: if the Android
+        // filter window [msNum, windowEnd) falls inside that range, skip the fetch.
+        const cacheCovers = this._fetchedAt >= 0
+            && msNum >= this._fetchedAt
+            && this._cacheMaxMs >= windowEnd;
+
+        if (!cacheCovers) {
+            this._fetchPage(msNum);
+        }
+
+        this.results = this._cached.filter(e => e.time >= msNum);
+        return this;
+    }
+
+    _fetchPage(msNum) {
+        const offsetSeconds = Math.floor(msNum / 1000);
+        const gql = [{
+            operationName: 'VideoCommentsByOffsetOrCursor',
+            variables: { videoID: this.videoId, contentOffsetSeconds: offsetSeconds },
+            extensions: {
+                persistedQuery: {
+                    version: 1,
+                    sha256Hash: 'b70a3591ff0f4e0313d126c6a1502d79a1c02baebb288227c582044aa76adf6a',
+                },
+            },
+        }];
+        const resp = callGQL(gql);
+        const comments = resp?.[0]?.data?.video?.comments;
+        if (!comments) {
+            this._cached = [];
+            this._fetchedAt = -1;
+            this._cacheMaxMs = -1;
+            this.hasMore = false;
+            return;
+        }
+        const events = [];
+        for (const edge of comments.edges ?? []) {
+            const node = edge?.node;
+            if (!node) continue;
+            const name = node.commenter?.displayName ?? node.commenter?.login ?? '';
+            const message = (node.message?.fragments ?? []).map(f => f?.text ?? '').join('');
+            if (!message) continue;
+            const color = node.message?.userColor ?? null;
+            const ev = new LiveEventComment(name, message, '', color, []);
+            ev.time = (node.contentOffsetSeconds ?? 0) * 1000;
+            events.push(ev);
+        }
+        this._cached = events;
+        this._fetchedAt = msNum;
+        // If the page has events, trust it up to the last event time.
+        // If the page is empty, assume ~30s of forward coverage to avoid a refetch storm on silent stretches.
+        this._cacheMaxMs = events.length ? events[events.length - 1].time : msNum + 30000;
+        this.hasMore = comments.pageInfo?.hasNextPage ?? false;
     }
 }
 
@@ -1617,19 +1695,13 @@ function extractTwitchClipSlug(url) {
 }
 
 function extractTwitchVideoId(url) {
-    if (!url) return null;
-
-    const match = url.match(REGEX_URL_VIDEO_DETAILS);
-    if (match) {
-        return match[2]; // The second capturing group contains the video ID
+    if (url) {
+        for (const re of [REGEX_URL_VIDEO_DETAILS, OLD_REGEX_URL_VIDEO_DETAILS]) {
+            const m = url.match(re);
+            if (m) return m[2];
     }
-
-    const old_match = url.match(OLD_REGEX_URL_VIDEO_DETAILS);
-    if (old_match) {
-        return old_match[2]; // The second capturing group contains the video ID
     }
-
-    return null; // Return null if no match
+    throw new ScriptException(`Could not extract VOD id from URL: ${url}`);
 }
 
 
@@ -1842,6 +1914,10 @@ function buildVodVideoDetails({ id, title, thumbnail, ownerId, ownerDisplayName,
     } else {
         result.getContentRecommendations = function () {
             return source.getContentRecommendations(url, vodMetadata);
+        };
+
+        result.getVODEvents = function () {
+            return new TwitchVODEventPager(id);
         };
     }
 
