@@ -38,7 +38,7 @@ const MAX_RECOMMENDATION_TAGS = 3;
 const RECOMMENDATION_LIMIT = 20;
 
 //* Global Variables
-let state = { integrity: '', integrityExpiresAt: 0 };
+let state = { integrity: '', integrityExpiresAt: 0, deviceId: '', sessionId: '' };
 
 let config = {}
 let _settings = {};
@@ -47,6 +47,23 @@ let webclient = http;
 // Integrity tokens are documented as valid for ~16 hours. Cache a little under that
 // so saved state doesn't hand out a token that's about to expire mid-session.
 const INTEGRITY_TTL_MS = 15 * 60 * 60 * 1000;
+
+// Client metadata Twitch's web player sends; mimicking these makes usher return ad-free
+// manifests that a real-browser visit would get. Updated periodically to keep pace with Twitch's web build.
+const TWITCH_CLIENT_VERSION = 'e3516258-d65a-44d0-9562-6a0288a94079';
+const TWITCH_PLAYER_VERSION = '1.51.0-rc.3';
+const ACMB_VALUE = btoa(JSON.stringify({ AppVersion: TWITCH_CLIENT_VERSION, ClientApp: 'web' }));
+
+function randomHex32() {
+    let s = '';
+    for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
+    return s;
+}
+
+function ensureDeviceIds() {
+    if (!state.deviceId) state.deviceId = randomHex32();
+    if (!state.sessionId) state.sessionId = randomHex32();
+}
 
 //* Source
 /**
@@ -68,7 +85,13 @@ source.enable = function (conf, settings, savedState) {
         try {
             const restored = JSON.parse(savedState);
             if (restored?.integrity && restored.integrityExpiresAt > Date.now()) {
-                state = { integrity: restored.integrity, integrityExpiresAt: restored.integrityExpiresAt };
+                state = {
+                    integrity: restored.integrity,
+                    integrityExpiresAt: restored.integrityExpiresAt,
+                    deviceId: restored.deviceId || '',
+                    sessionId: restored.sessionId || '',
+                };
+                ensureDeviceIds();
                 trace('Restored valid integrity token from saved state');
                 return;
             }
@@ -77,12 +100,11 @@ source.enable = function (conf, settings, savedState) {
         }
     }
 
+    ensureDeviceIds();
+
     const resp = webclient.POST('https://gql.twitch.tv/integrity', '', {
            ...buildApiHeaders(),
-           'Client-Version': '3e62b6e7-8e71-47f1-a2b3-0d661abad039',
-           'Client-Session-Id': '',
-           'Client-Request-Id': '',
-           'X-Device-Id': '',
+        'Client-Request-Id': randomHex32(),
     })
 
     ensureHttpOk(resp, 'Integrity fetch');
@@ -612,9 +634,11 @@ function getLiveVideo(url, video_details = true) {
         throw new UnavailableException('Unable to get playback access token')
     }
 
-    const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
+    const hls_url = buildLiveHlsUrl(login, spat);
 
-    const hls_source = new HLSSource({ name: 'live', duration: 0, url: hls_url, requestModifier: mediaRequestModifier() })
+    const hls_source_opts = { name: 'live', duration: 0, url: hls_url, requestModifier: mediaRequestModifier() };
+
+    const hls_source = new HLSSource(hls_source_opts)
 
 	const cacheBust = Math.floor(Date.now() / 300000); // refresh every 5 min
 
@@ -1678,6 +1702,39 @@ function ensureHttpOk(resp, label) {
     }
 }
 
+function buildLiveHlsUrl(login, spat) {
+    if (_settings?.useLegacyHlsUrl) {
+        return `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`;
+    }
+    ensureDeviceIds();
+    const params = {
+        acmb: ACMB_VALUE,
+        allow_source: 'true',
+        browser_family: 'firefox',
+        browser_version: '149.0',
+        cdm: 'wv',
+        enable_score: 'true',
+        fast_bread: 'true',
+        include_unavailable: 'true',
+        lang: 'en',
+        os_name: 'Windows',
+        os_version: 'NT 10.0',
+        p: String(Math.floor(Math.random() * 9000000) + 1000000),
+        platform: 'web',
+        play_session_id: state.sessionId,
+        player_backend: 'mediaplayer',
+        player_version: TWITCH_PLAYER_VERSION,
+        playlist_include_framerate: 'true',
+        reassignments_supported: 'true',
+        sig: spat.signature,
+        supported_codecs: 'av1,h265,h264',
+        token: spat.value,
+        transcode_mode: 'cbr_v1',
+    };
+    const query = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
+    return `https://usher.ttvnw.net/api/v2/channel/hls/${login}.m3u8?${query}`;
+}
+
 function buildApiHeaders({ includeIntegrity = false } = {}) {
     const headers = {
         Accept: '*/*',
@@ -1686,6 +1743,9 @@ function buildApiHeaders({ includeIntegrity = false } = {}) {
         Origin: 'https://www.twitch.tv',
         Referer: 'https://www.twitch.tv/',
         'Client-Id': CLIENT_ID,
+        'Client-Version': TWITCH_CLIENT_VERSION,
+        'Client-Session-Id': state.sessionId,
+        'X-Device-Id': state.deviceId,
     };
 
     if (!_settings?.impersonateApiRequests) {

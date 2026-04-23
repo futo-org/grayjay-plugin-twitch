@@ -23,6 +23,9 @@
 		"gql.twitch.tv",
 		"twitch.tv",
 		"usher.ttvnw.net",
+		".playlist.ttvnw.net",
+		".hls.ttvnw.net",
+		".live-video.net",
 		"production.assets.clips.twitchcdn.net"
 	],
 	"authentication": {
@@ -52,6 +55,19 @@
 			"variable": "verboseNotifications",
 			"name": "Verbose Notifications",
 			"description": "Show toast notifications for plugin trace messages and failed requests.",
+			"type": "Boolean",
+			"default": "false"
+		},
+		{
+			"variable": "livestreamAdsHeader",
+			"name": "Livestream Ads (Experimental)",
+			"description": "Filter Twitch-inserted commercial breaks from livestreams.",
+			"type": "Header"
+		},
+		{
+			"variable": "useLegacyHlsUrl",
+			"name": "Use Legacy HLS URL",
+			"description": "Fall back to the pre-v2 usher endpoint with sparse query parameters.",
 			"type": "Boolean",
 			"default": "false"
 		},
