@@ -1,8 +1,15 @@
 //* Constants
 const BASE_URL = 'https://www.twitch.tv/'
-const CLIENT_ID = 'ue6666qo983tsx6so1t0vnawi233wa' // old: kimne78kx3ncx6brgo4mv6wki5h1ko
 const GQL_URL = 'https://gql.twitch.tv/gql#origin=twilight'
 const PLATFORM = 'Twitch'
+
+// Twitch web client identity. Mimicking these values makes usher.ttvnw.net
+// return ad-free manifests that a real-browser visit would get.
+// Refresh periodically
+const CLIENT_ID = 'ue6666qo983tsx6so1t0vnawi233wa' // old: kimne78kx3ncx6brgo4mv6wki5h1ko
+const TWITCH_CLIENT_VERSION = 'e3516258-d65a-44d0-9562-6a0288a94079';
+const TWITCH_PLAYER_VERSION = '1.52.0-rc.1';
+const ACMB_VALUE = btoa(JSON.stringify({ AppVersion: TWITCH_CLIENT_VERSION, ClientApp: 'web' }));
 const PLATFORM_CLAIMTYPE = 14;
 const IS_DESKTOP = bridge.buildPlatform === "desktop";
 const USER_AGENT_FALLBACK = IS_DESKTOP
@@ -47,12 +54,6 @@ let webclient = http;
 // Integrity tokens are documented as valid for ~16 hours. Cache a little under that
 // so saved state doesn't hand out a token that's about to expire mid-session.
 const INTEGRITY_TTL_MS = 15 * 60 * 60 * 1000;
-
-// Client metadata Twitch's web player sends; mimicking these makes usher return ad-free
-// manifests that a real-browser visit would get. Updated periodically to keep pace with Twitch's web build.
-const TWITCH_CLIENT_VERSION = 'e3516258-d65a-44d0-9562-6a0288a94079';
-const TWITCH_PLAYER_VERSION = '1.51.0-rc.3';
-const ACMB_VALUE = btoa(JSON.stringify({ AppVersion: TWITCH_CLIENT_VERSION, ClientApp: 'web' }));
 
 function randomHex32() {
     let s = '';
