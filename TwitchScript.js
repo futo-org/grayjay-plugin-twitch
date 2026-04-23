@@ -208,6 +208,10 @@ source.getChannel = function (url) {
     const user_resp = json[0]
     const user = user_resp.data.user
 
+    if (!user) {
+        throw new UnavailableException('Channel not found')
+    }
+
     /** @type {import("./types.d.ts").ChannelShellResponse} */
     const shell_resp = json[1]
     const shell = shell_resp.data.userOrError
