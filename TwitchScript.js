@@ -526,7 +526,7 @@ function getLiveVideo(url, video_details = true) {
                     version: 1,
                 },
             },
-            query: 'query UseLive($channelLogin: String!) { user(login: $channelLogin) { id login stream { id createdAt } }',
+            query: 'query UseLive($channelLogin: String!) { user(login: $channelLogin) { id login stream { id createdAt } } }',
             operationName: 'UseLive',
             variables: {
                 channelLogin: login,
