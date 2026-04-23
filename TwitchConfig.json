@@ -44,6 +44,13 @@
 			"description": "",
 			"type": "Boolean",
 			"default": "true"
+		},
+		{
+			"variable": "verboseNotifications",
+			"name": "Verbose Notifications",
+			"description": "Show toast notifications for plugin trace messages and failed requests.",
+			"type": "Boolean",
+			"default": "false"
 		}
 	],
 	"changelog": {

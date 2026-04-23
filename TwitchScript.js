@@ -35,18 +35,36 @@ const MAX_RECOMMENDATION_TAGS = 3;
 const RECOMMENDATION_LIMIT = 20;
 
 //* Global Variables
-let INTEGRITY = ''
+let state = { integrity: '', integrityExpiresAt: 0 };
 
 let config = {}
 let _settings = {};
+
+// Integrity tokens are documented as valid for ~16 hours. Cache a little under that
+// so saved state doesn't hand out a token that's about to expire mid-session.
+const INTEGRITY_TTL_MS = 15 * 60 * 60 * 1000;
 
 //* Source
 /**
  * The enable endpoint gets an integrity token. These integrity tokens must be passed into the stream playback access token endpoint. The integrity endpoint always returns a token but it is not always valid. Valid tokens work for 16 hours. Valid tokens are generated through a kasada challenge. The way to tell if a token is invalid is to try an endpoint and see if it fails.
  */
-source.enable = function (conf, settings) {
+source.enable = function (conf, settings, savedState) {
     config = conf ?? {}
     _settings = settings ?? {};
+
+    if (savedState) {
+        try {
+            const restored = JSON.parse(savedState);
+            if (restored?.integrity && restored.integrityExpiresAt > Date.now()) {
+                state = { integrity: restored.integrity, integrityExpiresAt: restored.integrityExpiresAt };
+                trace('Restored valid integrity token from saved state');
+                return;
+            }
+        } catch (e) {
+            trace(`Failed to restore saved state: ${e.message}`);
+        }
+    }
+
     const resp = http.POST('https://gql.twitch.tv/integrity', '', {
         'User-Agent': getUserAgent(),
         Accept: '*/*',
@@ -61,11 +79,16 @@ source.enable = function (conf, settings) {
         'X-Device-Id': '',
     })
 
-    const json = JSON.parse(resp.body)
+    ensureHttpOk(resp, 'Integrity fetch');
+    trace('Integrity fetch succeeded');
 
-    INTEGRITY = json.token
+    const json = JSON.parse(resp.body);
+    state.integrity = json.token;
+    state.integrityExpiresAt = Date.now() + INTEGRITY_TTL_MS;
+}
 
-    return INTEGRITY
+source.saveState = function () {
+    return JSON.stringify(state);
 }
 source.getHome = function () {
     return getHomePagerPopular({ cursor: null, page_size: 20 })
@@ -971,7 +994,6 @@ function parseEmojiMessage(channelName, msg) {
  * @throws {ScriptException}
  */
 function callGQL(gql, use_authenticated = false, parse = true) {
-    // log("Integrity: " + INTEGRITY)
     const resp = http.POST(
         GQL_URL,
         JSON.stringify(gql),
@@ -983,14 +1005,12 @@ function callGQL(gql, use_authenticated = false, parse = true) {
             Origin: 'https://www.twitch.tv',
             Referer: 'https://www.twitch.tv/',
             'Client-Id': CLIENT_ID,
-            'Client-Integrity': INTEGRITY,
+            'Client-Integrity': state.integrity,
         },
         use_authenticated
     )
 
-    if (resp.code !== 200) {
-        throw new ScriptException(`GQL returned ${resp.code}: ${resp.body}`)
-    }
+    ensureHttpOk(resp, 'GQL');
 
     if (!parse) return resp.body
 
@@ -998,13 +1018,15 @@ function callGQL(gql, use_authenticated = false, parse = true) {
 
     // check for errors in the case of different lengths cause json can be array or single object
     if (!json.length && json.errors) {
-        throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`)
+        trace(`GQL errors: ${JSON.stringify(json.errors)}`);
+        throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`);
     }
 
     if (json.length) {
         for (const obj of json) {
             if (obj.errors) {
-                throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`)
+                trace(`GQL errors on ${obj.extensions?.operationName ?? 'unknown'}: ${JSON.stringify(obj.errors)}`);
+                throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`);
             }
         }
     }
@@ -1645,6 +1667,20 @@ function extractChannelId(url) {
     throw new ScriptException(`Could not extract channel login from URL: ${url}`);
 }
 
+function trace(msg, { showToast = false } = {}) {
+    if (_settings?.verboseNotifications || showToast) {
+        bridge.toast(msg);
+    }
+    log(msg);
+}
+
+function ensureHttpOk(resp, label) {
+    if (!resp.isOk) {
+        trace(`${label} failed (${resp.code}): ${resp.body}`);
+        throw new ScriptException(`${label} returned ${resp.code}`);
+    }
+}
+
 /**
  * Checks if a URL matches any Twitch clip URL formats
  * @param {string} url - The URL to check
@@ -1699,7 +1735,7 @@ function extractTwitchVideoId(url) {
         for (const re of [REGEX_URL_VIDEO_DETAILS, OLD_REGEX_URL_VIDEO_DETAILS]) {
             const m = url.match(re);
             if (m) return m[2];
-    }
+        }
     }
     throw new ScriptException(`Could not extract VOD id from URL: ${url}`);
 }
