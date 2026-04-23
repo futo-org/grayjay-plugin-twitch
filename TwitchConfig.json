@@ -15,6 +15,9 @@
 	"packages": [
 		"Http"
 	],
+	"packagesOptional": [
+		"HttpImp"
+	],
 	"allowEval": false,
 	"allowUrls": [
 		"gql.twitch.tv",
@@ -49,6 +52,26 @@
 			"variable": "verboseNotifications",
 			"name": "Verbose Notifications",
 			"description": "Show toast notifications for plugin trace messages and failed requests.",
+			"type": "Boolean",
+			"default": "false"
+		},
+		{
+			"variable": "browserImpersonationHeader",
+			"name": "Browser Impersonation (Experimental)",
+			"description": "Route requests through a browser-impersonating HTTP client. Enable if Twitch starts blocking the plugin.",
+			"type": "Header"
+		},
+		{
+			"variable": "impersonateApiRequests",
+			"name": "Impersonate API Requests",
+			"description": "Applies to GraphQL queries and the integrity token endpoint.",
+			"type": "Boolean",
+			"default": "false"
+		},
+		{
+			"variable": "impersonateMediaRequests",
+			"name": "Impersonate Media Requests",
+			"description": "Applies to HLS playlist and segment fetches.",
 			"type": "Boolean",
 			"default": "false"
 		}

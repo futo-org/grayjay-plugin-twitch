@@ -10,6 +10,9 @@ const USER_AGENT_FALLBACK = IS_DESKTOP
 	: 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.7559.133 Mobile Safari/537.36';
 const getUserAgent = () => bridge.authUserAgent ?? bridge.captchaUserAgent ?? USER_AGENT_FALLBACK;
 
+const IS_IMPERSONATION_AVAILABLE = typeof httpimp !== 'undefined';
+const IMPERSONATION_TARGET = IS_DESKTOP ? 'chrome136' : 'chrome131_android';
+
 const OLD_REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/videos\/(\d+)(\?.*)?$/
 const REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9-_]+\/video\/(\d+)(\?.*)?$/
 
@@ -39,6 +42,7 @@ let state = { integrity: '', integrityExpiresAt: 0 };
 
 let config = {}
 let _settings = {};
+let webclient = http;
 
 // Integrity tokens are documented as valid for ~16 hours. Cache a little under that
 // so saved state doesn't hand out a token that's about to expire mid-session.
@@ -51,6 +55,14 @@ const INTEGRITY_TTL_MS = 15 * 60 * 60 * 1000;
 source.enable = function (conf, settings, savedState) {
     config = conf ?? {}
     _settings = settings ?? {};
+
+    if (IS_IMPERSONATION_AVAILABLE && _settings.impersonateApiRequests) {
+        const client = httpimp.getDefaultClient(true);
+        client?.setDefaultImpersonateTarget?.(IMPERSONATION_TARGET);
+        webclient = httpimp;
+    } else {
+        webclient = http;
+    }
 
     if (savedState) {
         try {
@@ -65,18 +77,12 @@ source.enable = function (conf, settings, savedState) {
         }
     }
 
-    const resp = http.POST('https://gql.twitch.tv/integrity', '', {
-        'User-Agent': getUserAgent(),
-        Accept: '*/*',
-        DNT: '1',
-        Host: 'gql.twitch.tv',
-        Origin: 'https://www.twitch.tv',
-        Referer: 'https://www.twitch.tv/',
-        'Client-Id': CLIENT_ID,
-        'Client-Version': '3e62b6e7-8e71-47f1-a2b3-0d661abad039',
-        'Client-Session-Id': '',
-        'Client-Request-Id': '',
-        'X-Device-Id': '',
+    const resp = webclient.POST('https://gql.twitch.tv/integrity', '', {
+           ...buildApiHeaders(),
+           'Client-Version': '3e62b6e7-8e71-47f1-a2b3-0d661abad039',
+           'Client-Session-Id': '',
+           'Client-Request-Id': '',
+           'X-Device-Id': '',
     })
 
     ensureHttpOk(resp, 'Integrity fetch');
@@ -608,7 +614,7 @@ function getLiveVideo(url, video_details = true) {
 
     const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
 
-    const hls_source = new HLSSource({ name: 'live', duration: 0, url: hls_url })
+    const hls_source = new HLSSource({ name: 'live', duration: 0, url: hls_url, requestModifier: mediaRequestModifier() })
 
 	const cacheBust = Math.floor(Date.now() / 300000); // refresh every 5 min
 
@@ -994,19 +1000,10 @@ function parseEmojiMessage(channelName, msg) {
  * @throws {ScriptException}
  */
 function callGQL(gql, use_authenticated = false, parse = true) {
-    const resp = http.POST(
+    const resp = webclient.POST(
         GQL_URL,
         JSON.stringify(gql),
-        {
-            'User-Agent': getUserAgent(),
-            Accept: '*/*',
-            DNT: '1',
-            Host: 'gql.twitch.tv',
-            Origin: 'https://www.twitch.tv',
-            Referer: 'https://www.twitch.tv/',
-            'Client-Id': CLIENT_ID,
-            'Client-Integrity': state.integrity,
-        },
+        buildApiHeaders({ includeIntegrity: true }),
         use_authenticated
     )
 
@@ -1681,6 +1678,39 @@ function ensureHttpOk(resp, label) {
     }
 }
 
+function buildApiHeaders({ includeIntegrity = false } = {}) {
+    const headers = {
+        Accept: '*/*',
+        DNT: '1',
+        Host: 'gql.twitch.tv',
+        Origin: 'https://www.twitch.tv',
+        Referer: 'https://www.twitch.tv/',
+        'Client-Id': CLIENT_ID,
+    };
+
+    if (!_settings?.impersonateApiRequests) {
+        headers['User-Agent'] = getUserAgent();
+    }
+
+    if (includeIntegrity) {
+        headers['Client-Integrity'] = state.integrity;
+    }
+
+    return headers;
+}
+
+function mediaRequestModifier() {
+    if (!IS_IMPERSONATION_AVAILABLE || !_settings?.impersonateMediaRequests) return undefined;
+    return {
+        options: {
+            applyAuthClient: "",
+            applyCookieClient: "",
+            applyOtherHeaders: false,
+            impersonateTarget: IMPERSONATION_TARGET,
+        }
+    };
+}
+
 /**
  * Checks if a URL matches any Twitch clip URL formats
  * @param {string} url - The URL to check
@@ -1923,7 +1953,7 @@ function buildVodHlsUrl(vodId, signature, tokenValue) {
 }
 
 function buildVodVideoDetails({ id, title, thumbnail, ownerId, ownerDisplayName, ownerLogin, ownerProfileImageURL, uploadDate, duration, viewCount, url, description, hlsUrl, game }) {
-    const sources = [new HLSSource({ name: 'source', duration: 0, url: hlsUrl })];
+    const sources = [new HLSSource({ name: 'source', duration: 0, url: hlsUrl, requestModifier: mediaRequestModifier() })];
     const result = new PlatformVideoDetails({
         id: new PlatformID(PLATFORM, id, config.id),
         name: title,
