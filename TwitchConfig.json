@@ -7,7 +7,7 @@
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 33,
+	"version": 34,
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
 	"scriptSignature": "",
@@ -15,11 +15,17 @@
 	"packages": [
 		"Http"
 	],
+	"packagesOptional": [
+		"HttpImp"
+	],
 	"allowEval": false,
 	"allowUrls": [
 		"gql.twitch.tv",
 		"twitch.tv",
 		"usher.ttvnw.net",
+		".playlist.ttvnw.net",
+		".hls.ttvnw.net",
+		".live-video.net",
 		"production.assets.clips.twitchcdn.net"
 	],
 	"authentication": {
@@ -44,9 +50,65 @@
 			"description": "",
 			"type": "Boolean",
 			"default": "true"
+		},
+		{
+			"variable": "includeChannelPanels",
+			"name": "Include channel panel links",
+			"description": "Merge links from the channel's About panels (may include sponsored / affiliate links).",
+			"type": "Boolean",
+			"default": "false"
+		},
+		{
+			"variable": "verboseNotifications",
+			"name": "Verbose Notifications",
+			"description": "Show toast notifications for plugin trace messages and failed requests.",
+			"type": "Boolean",
+			"default": "false"
+		},
+		{
+			"variable": "livestreamAdsHeader",
+			"name": "Livestream Ads (Experimental)",
+			"description": "Filter Twitch-inserted commercial breaks from livestreams.",
+			"type": "Header"
+		},
+		{
+			"variable": "useLegacyHlsUrl",
+			"name": "Use Legacy HLS URL",
+			"description": "Fall back to the pre-v2 usher endpoint with sparse query parameters.",
+			"type": "Boolean",
+			"default": "false"
+		},
+		{
+			"variable": "browserImpersonationHeader",
+			"name": "Browser Impersonation (Experimental)",
+			"description": "Route requests through a browser-impersonating HTTP client. Enable if Twitch starts blocking the plugin.",
+			"type": "Header"
+		},
+		{
+			"variable": "impersonateApiRequests",
+			"name": "Impersonate API Requests",
+			"description": "Applies to GraphQL queries and the integrity token endpoint.",
+			"type": "Boolean",
+			"default": "false"
+		},
+		{
+			"variable": "impersonateMediaRequests",
+			"name": "Impersonate Media Requests",
+			"description": "Applies to HLS playlist and segment fetches.",
+			"type": "Boolean",
+			"default": "false"
 		}
 	],
 	"changelog": {
+		"34": [
+			"Fix: Update thumbnails of livestreams after some time;",
+			"Fix: Bypass Twitch livestream pre-roll;",
+			"Fix: Show a clear error for channels that no longer exist;",
+			"Performance: persist integrity token to state;",
+			"Feature: Show past livestream chats;",
+			"Feature: Support channel panel links in channel About tab (opt-in in plugin settings);",
+			"Feature: Add browser impersonation support (opt-in in plugin settings);"
+		],
 		"33": [
 			"Fix: Channel with query strings;"
 		],

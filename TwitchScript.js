@@ -1,14 +1,24 @@
 //* Constants
 const BASE_URL = 'https://www.twitch.tv/'
-const CLIENT_ID = 'ue6666qo983tsx6so1t0vnawi233wa' // old: kimne78kx3ncx6brgo4mv6wki5h1ko
 const GQL_URL = 'https://gql.twitch.tv/gql#origin=twilight'
 const PLATFORM = 'Twitch'
+
+// Twitch web client identity. Mimicking these values makes usher.ttvnw.net
+// return ad-free manifests that a real-browser visit would get.
+// Refresh periodically
+const CLIENT_ID = 'ue6666qo983tsx6so1t0vnawi233wa' // old: kimne78kx3ncx6brgo4mv6wki5h1ko
+const TWITCH_CLIENT_VERSION = 'e3516258-d65a-44d0-9562-6a0288a94079';
+const TWITCH_PLAYER_VERSION = '1.52.0-rc.1';
+const ACMB_VALUE = btoa(JSON.stringify({ AppVersion: TWITCH_CLIENT_VERSION, ClientApp: 'web' }));
 const PLATFORM_CLAIMTYPE = 14;
 const IS_DESKTOP = bridge.buildPlatform === "desktop";
 const USER_AGENT_FALLBACK = IS_DESKTOP
 	? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.200 Safari/537.36'
 	: 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.7559.133 Mobile Safari/537.36';
 const getUserAgent = () => bridge.authUserAgent ?? bridge.captchaUserAgent ?? USER_AGENT_FALLBACK;
+
+const IS_IMPERSONATION_AVAILABLE = typeof httpimp !== 'undefined';
+const IMPERSONATION_TARGET = IS_DESKTOP ? 'chrome136' : 'chrome131_android';
 
 const OLD_REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/videos\/(\d+)(\?.*)?$/
 const REGEX_URL_VIDEO_DETAILS = /^https?:\/\/(www\.|m\.)?twitch\.tv\/[a-zA-Z0-9-_]+\/video\/(\d+)(\?.*)?$/
@@ -35,37 +45,79 @@ const MAX_RECOMMENDATION_TAGS = 3;
 const RECOMMENDATION_LIMIT = 20;
 
 //* Global Variables
-let INTEGRITY = ''
+let state = { integrity: '', integrityExpiresAt: 0, deviceId: '', sessionId: '' };
 
 let config = {}
 let _settings = {};
+let webclient = http;
+
+// Integrity tokens are documented as valid for ~16 hours. Cache a little under that
+// so saved state doesn't hand out a token that's about to expire mid-session.
+const INTEGRITY_TTL_MS = 15 * 60 * 60 * 1000;
+
+function randomHex32() {
+    let s = '';
+    for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
+    return s;
+}
+
+function ensureDeviceIds() {
+    if (!state.deviceId) state.deviceId = randomHex32();
+    if (!state.sessionId) state.sessionId = randomHex32();
+}
 
 //* Source
 /**
  * The enable endpoint gets an integrity token. These integrity tokens must be passed into the stream playback access token endpoint. The integrity endpoint always returns a token but it is not always valid. Valid tokens work for 16 hours. Valid tokens are generated through a kasada challenge. The way to tell if a token is invalid is to try an endpoint and see if it fails.
  */
-source.enable = function (conf, settings) {
+source.enable = function (conf, settings, savedState) {
     config = conf ?? {}
     _settings = settings ?? {};
-    const resp = http.POST('https://gql.twitch.tv/integrity', '', {
-        'User-Agent': getUserAgent(),
-        Accept: '*/*',
-        DNT: '1',
-        Host: 'gql.twitch.tv',
-        Origin: 'https://www.twitch.tv',
-        Referer: 'https://www.twitch.tv/',
-        'Client-Id': CLIENT_ID,
-        'Client-Version': '3e62b6e7-8e71-47f1-a2b3-0d661abad039',
-        'Client-Session-Id': '',
-        'Client-Request-Id': '',
-        'X-Device-Id': '',
+
+    if (IS_IMPERSONATION_AVAILABLE && _settings.impersonateApiRequests) {
+        const client = httpimp.getDefaultClient(true);
+        client?.setDefaultImpersonateTarget?.(IMPERSONATION_TARGET);
+        webclient = httpimp;
+    } else {
+        webclient = http;
+    }
+
+    if (savedState) {
+        try {
+            const restored = JSON.parse(savedState);
+            if (restored?.integrity && restored.integrityExpiresAt > Date.now()) {
+                state = {
+                    integrity: restored.integrity,
+                    integrityExpiresAt: restored.integrityExpiresAt,
+                    deviceId: restored.deviceId || '',
+                    sessionId: restored.sessionId || '',
+                };
+                ensureDeviceIds();
+                trace('Restored valid integrity token from saved state');
+                return;
+            }
+        } catch (e) {
+            trace(`Failed to restore saved state: ${e.message}`);
+        }
+    }
+
+    ensureDeviceIds();
+
+    const resp = webclient.POST('https://gql.twitch.tv/integrity', '', {
+           ...buildApiHeaders(),
+        'Client-Request-Id': randomHex32(),
     })
 
-    const json = JSON.parse(resp.body)
+    ensureHttpOk(resp, 'Integrity fetch');
+    trace('Integrity fetch succeeded');
 
-    INTEGRITY = json.token
+    const json = JSON.parse(resp.body);
+    state.integrity = json.token;
+    state.integrityExpiresAt = Date.now() + INTEGRITY_TTL_MS;
+}
 
-    return INTEGRITY
+source.saveState = function () {
+    return JSON.stringify(state);
 }
 source.getHome = function () {
     return getHomePagerPopular({ cursor: null, page_size: 20 })
@@ -138,31 +190,67 @@ source.getChannel = function (url) {
         },
     ]
 
+    // Opt-in: fetch user-authored channel-page panels. Complements socialMedias;
+    // some channels (e.g. riotgames) keep most of their links in panels rather
+    // than in Twitch's curated socialMedias list. Non-persisted query works.
+    const includePanels = !!_settings?.includeChannelPanels;
+    if (includePanels) {
+        gql.push({
+            operationName: 'ChannelPanels',
+            query: 'query ChannelPanels($login: String!) { user(login: $login) { id panels { ... on DefaultPanel { id title linkURL } } } }',
+            variables: { login: login },
+        });
+    }
+
     const json = callGQL(gql)
 
     /** @type {import("./types.d.ts").ChannelAboutResponse} */
     const user_resp = json[0]
     const user = user_resp.data.user
 
+    if (!user) {
+        throw new UnavailableException('Channel not found')
+    }
+
     /** @type {import("./types.d.ts").ChannelShellResponse} */
     const shell_resp = json[1]
     const shell = shell_resp.data.userOrError
 
-    const links = Object.fromEntries(
-        user?.channel?.socialMedias?.filter(s => s.url).map(s => {
-            let key;
-            if (s.name) {
-                key = s.name.charAt(0).toUpperCase() + s.name.slice(1);
-            } else {
-                try {
-                    key = new URL(s.url).hostname.replace('www.', '') || s.url;
-                } catch {
-                    key = s.url;
-                }
-            }
-            return [key, s.url];
-        }) ?? []
-    );
+    const panels = includePanels ? (json[2]?.data?.user?.panels ?? []) : [];
+
+    // Normalize URL for dedup — lowercase + strip trailing slash. Users often
+    // have the same link as both a curated socialMedias entry AND a panel.
+    const normUrl = u => (u ?? '').toLowerCase().replace(/\/+$/, '');
+    const links = {};
+    const seenUrls = new Set();
+
+    const addLink = (rawKey, url) => {
+        if (!url) return;
+        const n = normUrl(url);
+        if (seenUrls.has(n)) return;
+        seenUrls.add(n);
+        let key = rawKey || (() => {
+            try { return new URL(url).hostname.replace('www.', '') || url; }
+            catch { return url; }
+        })();
+        // Resolve title collisions (panels sometimes duplicate labels).
+        if (links[key]) {
+            let i = 2;
+            while (links[`${key} (${i})`]) i++;
+            key = `${key} (${i})`;
+        }
+        links[key] = url;
+    };
+
+    // Prefer `title` (user-curated display name, e.g. "Twitter" even when name is "x")
+    // over capitalized `name`. Falls through addLink's hostname fallback if both absent.
+    for (const s of user?.channel?.socialMedias ?? []) {
+        const key = s.title || (s.name ? s.name.charAt(0).toUpperCase() + s.name.slice(1) : null);
+        addLink(key, s.url);
+    }
+    for (const p of panels) {
+        addLink(p?.title, p?.linkURL);
+    }
 
     return new PlatformChannel({
         id: new PlatformID(PLATFORM, user.id, config.id, PLATFORM_CLAIMTYPE),
@@ -181,7 +269,6 @@ source.getChannelContents = function (url) {
 
 source.getChannelTemplateByClaimMap = () => {
     return {
-        //SoundCloud
         14: {
             0: BASE_URL + "{{CLAIMVALUE}}"
         }
@@ -391,7 +478,6 @@ function getSavedVideo(url) {
     // get whatever is after the last slash in twitch.tv/videos/____/
     const id = extractTwitchVideoId(url)
 
-    // query as written: '# This query name is VERY IMPORTANT. # # There is code in twilight-apollo to split links such that # this query is NOT batched in an effort to retain snappy TTV. query PlaybackAccessToken($login: String! $isLive: Boolean! $vodID: ID! $isVod: Boolean! $playerType: String!) { streamPlaybackAccessToken(channelName: $login params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isVod) { value signature } }'
     const gql1 = [
         {
             extensions: {
@@ -491,7 +577,7 @@ function getSavedVideo(url) {
 function getLiveVideo(url, video_details = true) {
     // get whatever is after the last slash in twitch.tv/_____/
     const login = extractChannelId(url);
-    
+
     const gql_for_metadata = [
         {
             operationName: 'StreamMetadata',
@@ -526,7 +612,7 @@ function getLiveVideo(url, video_details = true) {
                     version: 1,
                 },
             },
-            query: 'query UseLive($channelLogin: String!) { user(login: $channelLogin) { id login stream { id createdAt } }',
+            query: 'query UseLive($channelLogin: String!) { user(login: $channelLogin) { id login stream { id createdAt } } }',
             operationName: 'UseLive',
             variables: {
                 channelLogin: login,
@@ -572,7 +658,6 @@ function getLiveVideo(url, video_details = true) {
     }
 
     if (ul?.stream === null) {
-        // log('Channel is not live:' + JSON.stringify(use_live, null, 2))
         throw new UnavailableException('Channel is not live')
     }
 
@@ -583,16 +668,20 @@ function getLiveVideo(url, video_details = true) {
         throw new UnavailableException('Unable to get playback access token')
     }
 
-    const hls_url = `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`
+    const hls_url = buildLiveHlsUrl(login, spat);
 
-    const hls_source = new HLSSource({ name: 'live', duration: 0, url: hls_url })
+    const hls_source_opts = { name: 'live', duration: 0, url: hls_url, requestModifier: mediaRequestModifier() };
+
+    const hls_source = new HLSSource(hls_source_opts)
+
+	const cacheBust = Math.floor(Date.now() / 300000); // refresh every 5 min
 
     const pv = new PlatformVideo({
         id: new PlatformID(PLATFORM, sm.id, config.id),
         name: sm.lastBroadcast.title,
         thumbnails: new Thumbnails([
-            new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-1280x720.jpg`, 720),
-            new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-854x480.jpg`, 480),
+            new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-1280x720.jpg?t=${cacheBust}`, 720),
+            new Thumbnail(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-854x480.jpg?t=${cacheBust}`, 480),
         ]),
         author: new PlatformAuthorLink(new PlatformID(PLATFORM, sm.channel.id, config.id, PLATFORM_CLAIMTYPE), login, url, sm.profileImageURL),
         uploadDate: parseInt(new Date(ul.stream.createdAt).getTime() / 1000),
@@ -646,6 +735,9 @@ source.getLiveChatWindow = function (url) {
         removeElements: [".stream-chat-header", ".chat-room__content > div:first-child"],
         removeElementsInterval: [".consent-banner"]
     };
+}
+source.getVODEvents = function (url) {
+    return new TwitchVODEventPager(extractTwitchVideoId(url));
 }
 source.getLiveEvents = function (url) {
 
@@ -835,6 +927,81 @@ class TwitchLiveEventPager extends LiveEventPager {
     }
 }
 
+class TwitchVODEventPager extends LiveEventPager {
+    /**
+     * @param {string} videoId
+     */
+    constructor(videoId) {
+        super([], true);
+        this.videoId = videoId;
+        this.nextRequest = 1000;
+        this._cached = [];
+        this._fetchedAt = -1;
+        this._cacheMaxMs = -1;
+    }
+
+    nextPage(ms) {
+        const msNum = ms ?? 0;
+        // Grayjay Android drops events with time >= msNum + 1500 (LiveChatManager.kt drip-feed window).
+        // Keep in sync if that filter changes.
+        const windowEnd = msNum + 1500;
+
+        // Cache is authoritative for [_fetchedAt, _cacheMaxMs]: if the Android
+        // filter window [msNum, windowEnd) falls inside that range, skip the fetch.
+        const cacheCovers = this._fetchedAt >= 0
+            && msNum >= this._fetchedAt
+            && this._cacheMaxMs >= windowEnd;
+
+        if (!cacheCovers) {
+            this._fetchPage(msNum);
+        }
+
+        this.results = this._cached.filter(e => e.time >= msNum);
+        return this;
+    }
+
+    _fetchPage(msNum) {
+        const offsetSeconds = Math.floor(msNum / 1000);
+        const gql = [{
+            operationName: 'VideoCommentsByOffsetOrCursor',
+            variables: { videoID: this.videoId, contentOffsetSeconds: offsetSeconds },
+            extensions: {
+                persistedQuery: {
+                    version: 1,
+                    sha256Hash: 'b70a3591ff0f4e0313d126c6a1502d79a1c02baebb288227c582044aa76adf6a',
+                },
+            },
+        }];
+        const resp = callGQL(gql);
+        const comments = resp?.[0]?.data?.video?.comments;
+        if (!comments) {
+            this._cached = [];
+            this._fetchedAt = -1;
+            this._cacheMaxMs = -1;
+            this.hasMore = false;
+            return;
+        }
+        const events = [];
+        for (const edge of comments.edges ?? []) {
+            const node = edge?.node;
+            if (!node) continue;
+            const name = node.commenter?.displayName ?? node.commenter?.login ?? '';
+            const message = (node.message?.fragments ?? []).map(f => f?.text ?? '').join('');
+            if (!message) continue;
+            const color = node.message?.userColor ?? null;
+            const ev = new LiveEventComment(name, message, '', color, []);
+            ev.time = (node.contentOffsetSeconds ?? 0) * 1000;
+            events.push(ev);
+        }
+        this._cached = events;
+        this._fetchedAt = msNum;
+        // If the page has events, trust it up to the last event time.
+        // If the page is empty, assume ~30s of forward coverage to avoid a refetch storm on silent stretches.
+        this._cacheMaxMs = events.length ? events[events.length - 1].time : msNum + 30000;
+        this.hasMore = comments.pageInfo?.hasNextPage ?? false;
+    }
+}
+
 // @badge-info=;badges=glitchcon2020/1;client-nonce=4aaf7de413ec6cd4ca3cfd342590c53b;color=#0053D5;display-name=bungerlove;emotes=25:10-14;first-msg=0;flags=;id=dd35695a-20f6-430e-a8fa-6ec284c5a02c;mod=0;returning-chatter=0;room-id=21841789;subscriber=0;tmi-sent-ts=1689265271382;turbo=0;user-id=161748597;user-type= :bungerlove!bungerlove@bungerlove.tmi.twitch.tv PRIVMSG #nmplol :prime sub Kappa
 // @badge-info=;badges=moments/1;color=#FF0000;display-name=blob___fish;emotes=33:36-43,45-52,67-74/133468:54-65,76-87,89-100/emotesv2_e02650251d204198923de93a0c62f5f5:102-110;first-msg=0;flags=;id=fdd7aafe-2f3a-4600-b5da-a8441e83f682;mod=0;returning-chatter=0;room-id=71092938;subscriber=0;tmi-sent-ts=1689266506402;turbo=0;user-id=737776278;user-type= :blob___fish!blob___fish@blob___fish.tmi.twitch.tv PRIVMSG #xqc :@xqc WHAT HAPPENS TO YOUR GAMESHOW? DansGame DansGame ItsBoshyTime DansGame ItsBoshyTime ItsBoshyTime PotFriend
 function parseEmojiMessage(channelName, msg) {
@@ -891,26 +1058,14 @@ function parseEmojiMessage(channelName, msg) {
  * @throws {ScriptException}
  */
 function callGQL(gql, use_authenticated = false, parse = true) {
-    // log("Integrity: " + INTEGRITY)
-    const resp = http.POST(
+    const resp = webclient.POST(
         GQL_URL,
         JSON.stringify(gql),
-        {
-            'User-Agent': getUserAgent(),
-            Accept: '*/*',
-            DNT: '1',
-            Host: 'gql.twitch.tv',
-            Origin: 'https://www.twitch.tv',
-            Referer: 'https://www.twitch.tv/',
-            'Client-Id': CLIENT_ID,
-            'Client-Integrity': INTEGRITY,
-        },
+        buildApiHeaders({ includeIntegrity: true }),
         use_authenticated
     )
 
-    if (resp.code !== 200) {
-        throw new ScriptException(`GQL returned ${resp.code}: ${resp.body}`)
-    }
+    ensureHttpOk(resp, 'GQL');
 
     if (!parse) return resp.body
 
@@ -918,13 +1073,15 @@ function callGQL(gql, use_authenticated = false, parse = true) {
 
     // check for errors in the case of different lengths cause json can be array or single object
     if (!json.length && json.errors) {
-        throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`)
+        trace(`GQL errors: ${JSON.stringify(json.errors)}`);
+        throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`);
     }
 
     if (json.length) {
         for (const obj of json) {
             if (obj.errors) {
-                throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`)
+                trace(`GQL errors on ${obj.extensions?.operationName ?? 'unknown'}: ${JSON.stringify(obj.errors)}`);
+                throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`);
             }
         }
     }
@@ -1561,12 +1718,91 @@ function searchChannelToPlatformChannel(sc) {
 
 function extractChannelId(url) {
     const match = url.match(REGEX_URL_CHANNEL);
+    if (match && match[1]) return match[1];
+    throw new ScriptException(`Could not extract channel login from URL: ${url}`);
+}
 
-    if (match && match[1]) {
-        return match[1];
-    } else {
-        console.log("Channel ID not found.");
+function trace(msg, { showToast = false } = {}) {
+    if (_settings?.verboseNotifications || showToast) {
+        bridge.toast(msg);
     }
+    log(msg);
+}
+
+function ensureHttpOk(resp, label) {
+    if (!resp.isOk) {
+        trace(`${label} failed (${resp.code}): ${resp.body}`);
+        throw new ScriptException(`${label} returned ${resp.code}`);
+    }
+}
+
+function buildLiveHlsUrl(login, spat) {
+    if (_settings?.useLegacyHlsUrl) {
+        return `https://usher.ttvnw.net/api/channel/hls/${login}.m3u8?acmb=e30=&allow_source=true&fast_bread=true&p=&play_session_id=&player_backend=mediaplayer&playlist_include_framerate=true&reassignments_supported=true&sig=${spat.signature}&supported_codecs=h265,h264&token=${encodeURIComponent(spat.value)}&transcode_mode=cbr_v1&cdm=wv&player_version=1.20.0`;
+    }
+    ensureDeviceIds();
+    const params = {
+        acmb: ACMB_VALUE,
+        allow_source: 'true',
+        browser_family: 'firefox',
+        browser_version: '149.0',
+        cdm: 'wv',
+        enable_score: 'true',
+        fast_bread: 'true',
+        include_unavailable: 'true',
+        lang: 'en',
+        os_name: 'Windows',
+        os_version: 'NT 10.0',
+        p: String(Math.floor(Math.random() * 9000000) + 1000000),
+        platform: 'web',
+        play_session_id: state.sessionId,
+        player_backend: 'mediaplayer',
+        player_version: TWITCH_PLAYER_VERSION,
+        playlist_include_framerate: 'true',
+        reassignments_supported: 'true',
+        sig: spat.signature,
+        supported_codecs: 'av1,h265,h264',
+        token: spat.value,
+        transcode_mode: 'cbr_v1',
+    };
+    const query = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
+    return `https://usher.ttvnw.net/api/v2/channel/hls/${login}.m3u8?${query}`;
+}
+
+function buildApiHeaders({ includeIntegrity = false } = {}) {
+    const headers = {
+        Accept: '*/*',
+        DNT: '1',
+        Host: 'gql.twitch.tv',
+        Origin: 'https://www.twitch.tv',
+        Referer: 'https://www.twitch.tv/',
+        'Client-Id': CLIENT_ID,
+        'Client-Version': TWITCH_CLIENT_VERSION,
+        'Client-Session-Id': state.sessionId,
+        'X-Device-Id': state.deviceId,
+    };
+
+    if (!_settings?.impersonateApiRequests) {
+        headers['User-Agent'] = getUserAgent();
+    }
+
+    if (includeIntegrity) {
+        headers['Client-Integrity'] = state.integrity;
+    }
+
+    return headers;
+}
+
+function mediaRequestModifier() {
+    if (!IS_IMPERSONATION_AVAILABLE || !_settings?.impersonateMediaRequests) return undefined;
+    return {
+        options: {
+            applyAuthClient: "",
+            applyCookieClient: "",
+            applyOtherHeaders: false,
+            impersonateTarget: IMPERSONATION_TARGET,
+        }
+    };
 }
 
 /**
@@ -1619,19 +1855,13 @@ function extractTwitchClipSlug(url) {
 }
 
 function extractTwitchVideoId(url) {
-    if (!url) return null;
-
-    const match = url.match(REGEX_URL_VIDEO_DETAILS);
-    if (match) {
-        return match[2]; // The second capturing group contains the video ID
+    if (url) {
+        for (const re of [REGEX_URL_VIDEO_DETAILS, OLD_REGEX_URL_VIDEO_DETAILS]) {
+            const m = url.match(re);
+            if (m) return m[2];
+        }
     }
-
-    const old_match = url.match(OLD_REGEX_URL_VIDEO_DETAILS);
-    if (old_match) {
-        return old_match[2]; // The second capturing group contains the video ID
-    }
-
-    return null; // Return null if no match
+    throw new ScriptException(`Could not extract VOD id from URL: ${url}`);
 }
 
 
@@ -1817,7 +2047,7 @@ function buildVodHlsUrl(vodId, signature, tokenValue) {
 }
 
 function buildVodVideoDetails({ id, title, thumbnail, ownerId, ownerDisplayName, ownerLogin, ownerProfileImageURL, uploadDate, duration, viewCount, url, description, hlsUrl, game }) {
-    const sources = [new HLSSource({ name: 'source', duration: 0, url: hlsUrl })];
+    const sources = [new HLSSource({ name: 'source', duration: 0, url: hlsUrl, requestModifier: mediaRequestModifier() })];
     const result = new PlatformVideoDetails({
         id: new PlatformID(PLATFORM, id, config.id),
         name: title,
@@ -1844,6 +2074,10 @@ function buildVodVideoDetails({ id, title, thumbnail, ownerId, ownerDisplayName,
     } else {
         result.getContentRecommendations = function () {
             return source.getContentRecommendations(url, vodMetadata);
+        };
+
+        result.getVODEvents = function () {
+            return new TwitchVODEventPager(id);
         };
     }
 
