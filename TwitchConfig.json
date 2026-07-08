@@ -40,6 +40,19 @@
 			]
 		}
 	},
+	"authenticationDesktop": {
+		"userAgent": null,
+		"loginUrl": "https://www.twitch.tv/login",
+		"headersToFind": [
+			"Authorization"
+		],
+		"domainHeadersToFind": {
+			".twitch.tv": [
+				"authorization"
+			]
+		},
+		"useMobileEmulation": false
+	},
 	"supportedClaimTypes": [
 		14
 	],
