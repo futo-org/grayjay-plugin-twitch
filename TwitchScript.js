@@ -492,7 +492,10 @@ function getClippedVideo(url) {
             name: `${quality.quality}p`, 
             duration: clip.durationSeconds, 
             url: sourceUrl,
-            width: parseInt(quality.quality),
+            // Twitch clip `quality` is the vertical resolution ("1080" = 1080p). Leaving height 0
+            // made Grayjay collapse all clip qualities into one (Android showed only 1080p).
+            width: Math.round(parseInt(quality.quality) * 16 / 9),
+            height: parseInt(quality.quality),
             container: "video/mp4"
         });  
     })
