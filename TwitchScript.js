@@ -1216,7 +1216,7 @@ function getHomePagerPopular(context, excludeUrl = null) {
     // const json = callGQL(gql, true)
 
     let streams = json.data.streams.edges
-    .filter((s) => s.node.broadcaster)
+    .filter((s) => s?.node?.broadcaster)
     .map((s) => {
         let n = s.node
         return new PlatformVideo({
@@ -1396,7 +1396,7 @@ function getChannelPager(context) {
     const clips = clipsJson?.data?.user?.clips?.edges ?? [];
 
     // Batch-fetch playback tokens for videos to detect subscriber-only and build HLS URLs
-    const videoEdges = edges.filter(e => e.node.owner != null);
+    const videoEdges = edges.filter(e => e?.node?.owner != null);
     const subscriberOnlyIds = new Set();
     const videoTokens = {};
 
@@ -1434,7 +1434,10 @@ function getChannelPager(context) {
     }
 
     let videos = [...edges,...clips].filter(edge => {
-        // Filter out items without owner/broadcaster
+        // Skip edges with a null node (Twitch can return node:null) and items without owner/broadcaster
+        if(edge?.node == null) {
+            return false;
+        }
         if(edge.node.__typename == 'Clip') {
             return edge.node.broadcaster != null;
         } else {
@@ -2069,7 +2072,7 @@ function getRecommendationsPager(params) {
         }
 
         streams = streams
-            .filter((s) => s.node.broadcaster)
+            .filter((s) => s?.node?.broadcaster)
             .map((s) => {
                 let n = s.node;
                 return new PlatformVideo({
