@@ -7,7 +7,7 @@
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 34,
+	"version": 35,
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
 	"scriptSignature": "",
@@ -29,7 +29,7 @@
 		"production.assets.clips.twitchcdn.net"
 	],
 	"authentication": {
-		"userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Mobile Safari/537.36",
+		"userAgent": null,
 		"loginUrl": "https://www.twitch.tv/login",
 		"headersToFind": [
 			"Authorization"
@@ -39,6 +39,19 @@
 				"authorization"
 			]
 		}
+	},
+	"authenticationDesktop": {
+		"userAgent": null,
+		"loginUrl": "https://www.twitch.tv/login",
+		"headersToFind": [
+			"Authorization"
+		],
+		"domainHeadersToFind": {
+			".twitch.tv": [
+				"authorization"
+			]
+		},
+		"useMobileEmulation": false
 	},
 	"supportedClaimTypes": [
 		14
@@ -60,8 +73,8 @@
 		},
 		{
 			"variable": "verboseNotifications",
-			"name": "Verbose Notifications",
-			"description": "Show toast notifications for plugin trace messages and failed requests.",
+			"name": "Verbose notifications",
+			"description": "Show toast notifications for plugin trace messages and failed requests (useful for debugging).",
 			"type": "Boolean",
 			"default": "false"
 		},
@@ -100,6 +113,11 @@
 		}
 	],
 	"changelog": {
+		"35": [
+			"Fix: Clips now show all available video qualities;",
+			"Fix: Use login webview's own user agent;",
+			"Fix: Increase subscription import from 100 up to 200 followed channels;"
+		],
 		"34": [
 			"Fix: Update thumbnails of livestreams after some time;",
 			"Fix: Bypass Twitch livestream pre-roll;",

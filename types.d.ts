@@ -517,6 +517,27 @@ export type PersonalSectionsResponse = DataWrapper<{
     }[]
 }>
 
+export type ChannelFollowsResponse = DataWrapper<{
+    user: {
+        __typename: 'User'
+        follows: {
+            __typename: 'FollowConnection'
+            edges: {
+                __typename: 'FollowEdge'
+                cursor: string
+                node: {
+                    __typename: 'User'
+                    login: string
+                }
+            }[]
+            pageInfo: {
+                __typename: 'PageInfo'
+                hasNextPage: boolean
+            }
+        }
+    } | null
+}>
+
 export type PersonalSectionsFollowedResponse = DataWrapper<{
     personalSections: {
         type: 'RECS_FOLLOWED_SECTION'

@@ -324,29 +324,99 @@ source.getContentRecommendations = function (url, obj) {
 }
 
 source.getUserSubscriptions = function () {
-    const gql = {
-        "operationName": "ChannelFollows",
-        "variables": {
-            "limit": 100,
-            "order": "DESC"
-        },
-        "extensions": {
-            "persistedQuery": {
-                "version": 1,
-                "sha256Hash": "eecf815273d3d949e5cf0085cc5084cd8a1b5b7b6f7990cf43cb0beadf546907"
-            }
+    // Full inline query instead of a persisted-query hash: Twitch rotates its persisted
+    // manifest, and hash-only calls break with PersistedQueryNotFound when it does.
+    const FOLLOWS_QUERY = 'query ChannelFollows($limit: Int, $order: SortOrder, $cursor: Cursor) { user { follows(first: $limit, order: $order, after: $cursor) { edges { cursor node { login } } pageInfo { hasNextPage } } } }';
+    const FOLLOWS_PAGE_SIZE = 100; // Twitch caps the ChannelFollows `first` argument at 100
+    const FOLLOWS_MAX_PAGES = 50; // safety bound on the cursor loop
+
+    /**
+     * Fetches one page of the authenticated user's follows.
+     * @param {'ASC'|'DESC'} order Sort direction by follow date.
+     * @param {string|null} cursor Opaque pagination cursor, or null for the first page.
+     * @returns {{edges: {cursor: string, node: {login: string}}[], pageInfo: {hasNextPage: boolean}}} The follows connection.
+     */
+    function fetchFollowsPage(order, cursor) {
+        const variables = { limit: FOLLOWS_PAGE_SIZE, order };
+        if (cursor) {
+            variables.cursor = cursor;
         }
-    };
-
-    /** @type {import("./types.d.ts").PersonalSectionsFollowedResponse} */
-    const json = callGQL(gql, true)
-
-    const user = json.data.user;
-    if (!user) {
-        throw new ScriptException('Authentication Failed')
+        const gql = {
+            operationName: 'ChannelFollows',
+            variables,
+            query: FOLLOWS_QUERY,
+        };
+        /** @type {import("./types.d.ts").ChannelFollowsResponse} */
+        const json = callGQL(gql, true);
+        const user = json.data?.user;
+        if (!user) {
+            throw new ScriptException('Authentication Failed');
+        }
+        return user.follows;
     }
 
-    return user.follows.edges.map((e) => BASE_URL + e.node.login)
+    const orderedLogins = [];
+    const seenLogins = new Set();
+
+    /**
+     * Appends channel logins from follow edges, skipping duplicates and preserving order.
+     * @param {{node: {login: string}}[]} edges Follow edges from a follows page.
+     */
+    function addEdges(edges) {
+        for (const edge of edges) {
+            const login = edge?.node?.login;
+            if (login && !seenLogins.has(login)) {
+                seenLogins.add(login);
+                orderedLogins.push(login);
+            }
+        }
+    }
+
+    // Newest follows first.
+    const newestPage = fetchFollowsPage('DESC', null);
+    addEdges(newestPage.edges);
+    let paginationComplete = !newestPage.pageInfo?.hasNextPage
+        || newestPage.edges.length < FOLLOWS_PAGE_SIZE;
+
+    // Preferred path: real cursor pagination. Twitch gates deep follow pagination behind a
+    // valid integrity token, so this can fail; the two-ended merge below is the fallback.
+    if (!paginationComplete) {
+        try {
+            let cursor = newestPage.edges[newestPage.edges.length - 1].cursor;
+            for (let page = 1; page < FOLLOWS_MAX_PAGES; page++) {
+                const nextPage = fetchFollowsPage('DESC', cursor);
+                addEdges(nextPage.edges);
+                if (!nextPage.pageInfo?.hasNextPage || nextPage.edges.length < FOLLOWS_PAGE_SIZE) {
+                    paginationComplete = true;
+                    break;
+                }
+                cursor = nextPage.edges[nextPage.edges.length - 1].cursor;
+            }
+        } catch (error) {
+            trace(`Follow cursor pagination unavailable, using two-ended merge: ${error.message}`);
+        }
+    }
+
+    // Fallback: fetch the oldest follows un-cursored and merge. Covers accounts up to twice
+    // the page size without needing cursor pagination.
+    if (!paginationComplete) {
+        const newestCount = orderedLogins.length;
+        try {
+            const oldestPage = fetchFollowsPage('ASC', null);
+            // ASC returns oldest-first; reverse so the merged tail stays newest-to-oldest like the first page.
+            addEdges(oldestPage.edges.slice().reverse());
+            const bothPagesFull = newestCount >= FOLLOWS_PAGE_SIZE
+                && oldestPage.edges.length >= FOLLOWS_PAGE_SIZE;
+            const noOverlap = orderedLogins.length === newestCount + oldestPage.edges.length;
+            if (bothPagesFull && noOverlap) {
+                trace('Your Twitch follow list is too large to import in full; some followed channels were skipped.', { showToast: true });
+            }
+        } catch (error) {
+            trace(`Failed to fetch oldest follows: ${error.message}`);
+        }
+    }
+
+    return orderedLogins.map((login) => BASE_URL + login);
 }
 
 function getClippedVideo(url) {
@@ -422,7 +492,10 @@ function getClippedVideo(url) {
             name: `${quality.quality}p`, 
             duration: clip.durationSeconds, 
             url: sourceUrl,
-            width: parseInt(quality.quality),
+            // Twitch clip `quality` is the vertical resolution ("1080" = 1080p). Leaving height 0
+            // made Grayjay collapse all clip qualities into one (Android showed only 1080p).
+            width: Math.round(parseInt(quality.quality) * 16 / 9),
+            height: parseInt(quality.quality),
             container: "video/mp4"
         });  
     })
