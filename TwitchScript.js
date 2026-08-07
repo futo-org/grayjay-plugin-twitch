@@ -124,12 +124,6 @@ source.getHome = function () {
 }
 source.searchSuggestions = function (query) {
     const gql = {
-        extensions: {
-            persistedQuery: {
-                sha256Hash: 'b71566f2c593dd906493b0ab2012e5626c7f277d3e435504d4454de2ff15788a',
-                version: 1,
-            },
-        },
         query: 'query SearchTray_SearchSuggestions($queryFragment: String! $requestID: ID $withOfflineChannelContent: Boolean) { searchSuggestions(queryFragment: $queryFragment requestID: $requestID withOfflineChannelContent: $withOfflineChannelContent){ edges { ...searchSuggestionNode } tracking { modelTrackingID responseID } } } fragment searchSuggestionNode on SearchSuggestionEdge { node { content { __typename ... on SearchSuggestionChannel { id isLive isVerified login profileImageURL(width: 50) user { id stream { id game { id } } } } ... on SearchSuggestionCategory { id boxArtURL(width: 30 height: 40) } } matchingCharacters { start end } id text } }',
         operationName: 'SearchTray_SearchSuggestions',
         variables: {
@@ -168,24 +162,13 @@ source.getChannel = function (url) {
                 channelLogin: login,
                 skipSchedule: false,
             },
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '6089531acef6c09ece01b440c41978f4c8dc60cb4fa0124c9a9d3f896709b6c6',
-                    version: 1,
-                },
-            },
         },
         {
-            query: '#import "./query-channel-with-home-prefs-fragment.gql" query ChannelShell($login: String!) { userOrError: userResultByLogin(login: $login) { ...coreChannelWithHomePrefsFragment ... on UserDoesNotExist { userDoesNotExist: key reason } ... on UserError { userError: key } } }',
+            // Self-contained inline query; the previous #import-based body was only valid alongside a persisted hash.
+            query: 'query ChannelShell($login: String!) { userOrError: userResultByLogin(login: $login) { ... on User { id login displayName bannerImageURL profileImageURL(width: 150) } ... on UserDoesNotExist { userDoesNotExist: key } ... on UserError { userError: key } } }',
             operationName: 'ChannelShell',
             variables: {
                 login: login,
-            },
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '580ab410bcd0c1ad194224957ae2241e5d252b2c5173d8e0cce9d32d5bb14efe',
-                    version: 1,
-                },
             },
         },
     ]
@@ -553,12 +536,6 @@ function getSavedVideo(url) {
 
     const gql1 = [
         {
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9',
-                    version: 1,
-                },
-            },
             operationName: 'PlaybackAccessToken',
             variables: {
                 isLive: false,
@@ -571,12 +548,6 @@ function getSavedVideo(url) {
             query: 'query PlaybackAccessToken($login: String! $isLive: Boolean! $vodID: ID! $isVod: Boolean! $playerType: String!) { streamPlaybackAccessToken(channelName: $login params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isLive) { value signature } videoPlaybackAccessToken(id: $vodID params: {platform: "web" playerBackend: "mediaplayer" playerType: $playerType}) @include(if: $isVod) { value signature } }',
         },
         {
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: 'cf1ccf6f5b94c94d662efec5223dfb260c9f8bf053239a76125a58118769e8e2',
-                    version: 1,
-                },
-            },
             operationName: 'ChannelVideoCore',
             variables: {
                 videoID: id,
@@ -658,12 +629,6 @@ function getLiveVideo(url, video_details = true) {
             variables: {
                 channelLogin: login,
             },
-            extensions: {
-                persistedQuery: {
-                    version: 1,
-                    sha256Hash: 'a647c2a13599e5991e175155f798ca7f1ecddde73f7f341f39009c14dbf59962',
-                },
-            },
         },
         {
             query: 'query UseViewCount($channelLogin: String!) { user(login: $channelLogin) { id stream { id viewersCount } } }',
@@ -671,20 +636,8 @@ function getLiveVideo(url, video_details = true) {
             variables: {
                 channelLogin: login,
             },
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '00b11c9c428f79ae228f30080a06ffd8226a1f068d6f52fbc057cbde66e994c2',
-                    version: 1,
-                },
-            },
         },
         {
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '639d5f11bfb8bf3053b424d9ef650d04c4ebb7d94711d644afb08fe9a0fad5d9',
-                    version: 1,
-                },
-            },
             query: 'query UseLive($channelLogin: String!) { user(login: $channelLogin) { id login stream { id createdAt } } }',
             operationName: 'UseLive',
             variables: {
@@ -692,12 +645,6 @@ function getLiveVideo(url, video_details = true) {
             },
         },
         {
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9',
-                    version: 1,
-                },
-            },
             operationName: 'PlaybackAccessToken',
             variables: {
                 isLive: true,
@@ -818,26 +765,16 @@ source.getLiveEvents = function (url) {
 
     const gql = [
         {
-            query: '#import "./query-channel-with-home-prefs-fragment.gql" query ChannelShell($login: String!) { userOrError: userResultByLogin(login: $login) { ...coreChannelWithHomePrefsFragment ... on UserDoesNotExist { userDoesNotExist: key reason } ... on UserError { userError: key } } }',
+            // Self-contained inline query; the previous #import-based body was only valid alongside a persisted hash.
+            query: 'query ChannelShell($login: String!) { userOrError: userResultByLogin(login: $login) { ... on User { id login displayName bannerImageURL profileImageURL(width: 150) } ... on UserDoesNotExist { userDoesNotExist: key } ... on UserError { userError: key } } }',
             operationName: 'ChannelShell',
             variables: {
                 login: login,
             },
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '580ab410bcd0c1ad194224957ae2241e5d252b2c5173d8e0cce9d32d5bb14efe',
-                    version: 1,
-                },
-            },
         },
         {
-            query: '#import "twilight/features/badges/models/badge-fragment.gql" #import "twilight/features/squad-stream/models/squad-stream-fragment.gql" query ChatList_Badges($channelLogin: String!) { badges { ...badge } user(login: $channelLogin) { id primaryColorHex broadcastBadges { ...badge } self { selectedBadge { ...badge } displayBadges { ...badge } } squadStream { ...squadStreamData } } }',
-            extensions: {
-                persistedQuery: {
-                    sha256Hash: '86f43113c04606e6476e39dcd432dee47c994d77a83e54b732e11d4935f0cd08',
-                    version: 1,
-                },
-            },
+            // Self-contained inline query; the previous #import-based body was only valid alongside a persisted hash.
+            query: 'query ChatList_Badges($channelLogin: String!) { badges { id setID version image2x: imageURL(size: DOUBLE) } user(login: $channelLogin) { id primaryColorHex broadcastBadges { id setID version image2x: imageURL(size: DOUBLE) } } }',
             operationName: 'ChatList_Badges',
             variables: {
                 channelLogin: login,
@@ -1038,12 +975,7 @@ class TwitchVODEventPager extends LiveEventPager {
         const gql = [{
             operationName: 'VideoCommentsByOffsetOrCursor',
             variables: { videoID: this.videoId, contentOffsetSeconds: offsetSeconds },
-            extensions: {
-                persistedQuery: {
-                    version: 1,
-                    sha256Hash: 'b70a3591ff0f4e0313d126c6a1502d79a1c02baebb288227c582044aa76adf6a',
-                },
-            },
+            query: 'query VideoCommentsByOffsetOrCursor($videoID: ID!, $contentOffsetSeconds: Int) { video(id: $videoID) { id comments(contentOffsetSeconds: $contentOffsetSeconds) { edges { cursor node { id commenter { id login displayName } contentOffsetSeconds createdAt message { fragments { text } userColor } } } pageInfo { hasNextPage } } } }',
         }];
         const resp = callGQL(gql);
         const comments = resp?.[0]?.data?.video?.comments;
@@ -1551,12 +1483,6 @@ function getChannelPager(context) {
  */
 function getSearchPagerAll(context) {
     const gql = {
-        extensions: {
-            persistedQuery: {
-                sha256Hash: '6ea6e6f66006485e41dbe3ebd69d5674c5b22896ce7b595d7fce6411a3790138',
-                version: 1,
-            },
-        },
         operationName: 'SearchResultsPage_SearchResults',
         variables: {
             query: context.q,
@@ -1607,12 +1533,6 @@ function getSearchPagerAll(context) {
  */
 function getSearchPagerChannels(context) {
     const gql = {
-        extensions: {
-            persistedQuery: {
-                sha256Hash: '6ea6e6f66006485e41dbe3ebd69d5674c5b22896ce7b595d7fce6411a3790138',
-                version: 1,
-            },
-        },
         operationName: 'SearchResultsPage_SearchResults',
         variables: {
             options: {
