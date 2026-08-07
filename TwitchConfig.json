@@ -7,7 +7,7 @@
 	"sourceUrl": "https://plugins.grayjay.app/Twitch/TwitchConfig.json",
 	"repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/twitch",
 	"scriptUrl": "./TwitchScript.js",
-	"version": 36,
+	"version": 37,
 	"iconUrl": "./twitch.png",
 	"id": "c0f315f9-0992-4508-a061-f2738724c331",
 	"scriptSignature": "",
@@ -113,6 +113,10 @@
 		}
 	],
 	"changelog": {
+		"37": [
+			"Fix: Channels, streams, VODs, search, and chat no longer fail with 'persistedQuery sha256 hash does not match query body';",
+			"Fix: VOD chat replay no longer depends on a rotating persisted query hash;"
+		],
 		"36": [
 			"Fix: Channel pages no longer crash on an unavailable clip;"
 		],
