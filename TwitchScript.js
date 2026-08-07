@@ -975,12 +975,7 @@ class TwitchVODEventPager extends LiveEventPager {
         const gql = [{
             operationName: 'VideoCommentsByOffsetOrCursor',
             variables: { videoID: this.videoId, contentOffsetSeconds: offsetSeconds },
-            extensions: {
-                persistedQuery: {
-                    version: 1,
-                    sha256Hash: 'b70a3591ff0f4e0313d126c6a1502d79a1c02baebb288227c582044aa76adf6a',
-                },
-            },
+            query: 'query VideoCommentsByOffsetOrCursor($videoID: ID!, $contentOffsetSeconds: Int) { video(id: $videoID) { id comments(contentOffsetSeconds: $contentOffsetSeconds) { edges { cursor node { id commenter { id login displayName } contentOffsetSeconds createdAt message { fragments { text } userColor } } } pageInfo { hasNextPage } } } }',
         }];
         const resp = callGQL(gql);
         const comments = resp?.[0]?.data?.video?.comments;
