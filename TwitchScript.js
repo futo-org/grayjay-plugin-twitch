@@ -1059,10 +1059,11 @@ function parseEmojiMessage(channelName, msg) {
  * @param {Object} gql the gql query object to be stringified and sent
  * @param {boolean} use_authenticated if true, will use the authenticated headers
  * @param {boolean} parse if true, will parse the response as json and check for errors
+ * @param {boolean} allow_partial_errors if true, return batched responses with per-operation errors
  * @returns {string | Object} the response body as a string or the parsed json object
  * @throws {ScriptException}
  */
-function callGQL(gql, use_authenticated = false, parse = true) {
+function callGQL(gql, use_authenticated = false, parse = true, allow_partial_errors = false) {
     const resp = webclient.POST(
         GQL_URL,
         JSON.stringify(gql),
@@ -1074,24 +1075,66 @@ function callGQL(gql, use_authenticated = false, parse = true) {
 
     if (!parse) return resp.body
 
-    const json = JSON.parse(resp.body)
+    return validateGQLResponse(JSON.parse(resp.body), allow_partial_errors)
+}
+
+/**
+ * Validates parsed GraphQL response data.
+ * @param {Object | Object[]} json parsed GraphQL response
+ * @param {boolean} allow_partial_errors if true, preserve batched responses with per-operation errors
+ * @returns {Object | Object[]} the validated response
+ * @throws {ScriptException}
+ */
+function validateGQLResponse(json, allow_partial_errors = false) {
+    const isBatch = Array.isArray(json)
 
     // check for errors in the case of different lengths cause json can be array or single object
-    if (!json.length && json.errors) {
+    if (!isBatch && json.errors) {
         trace(`GQL errors: ${JSON.stringify(json.errors)}`);
         throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`);
     }
 
-    if (json.length) {
+    if (isBatch) {
         for (const obj of json) {
             if (obj.errors) {
                 trace(`GQL errors on ${obj.extensions?.operationName ?? 'unknown'}: ${JSON.stringify(obj.errors)}`);
-                throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`);
+                if (!allow_partial_errors) {
+                    throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`);
+                }
             }
         }
     }
 
     return json
+}
+
+/**
+ * Gets one operation from a batched GraphQL response.
+ * @param {Object[]} response batched GraphQL response
+ * @param {string} operationName operation to find
+ * @param {boolean} required if true, throw when the operation is missing or errored
+ * @returns {Object | null} the successful operation response, or null for an unavailable optional operation
+ * @throws {ScriptException}
+ */
+function getGQLBatchOperation(response, operationName, required) {
+    const operation = response.find(e => e?.extensions?.operationName === operationName)
+
+    if (!operation) {
+        if (required) {
+            throw new ScriptException(`GQL response missing required operation: ${operationName}`)
+        }
+        trace(`GQL response missing optional operation: ${operationName}`)
+        return null
+    }
+
+    if (operation.errors) {
+        if (required) {
+            throw new ScriptException(`GQL returned errors: ${JSON.stringify(operation.errors)}`)
+        }
+        return null
+    }
+
+    return operation
 }
 
 //* Pagers
@@ -1284,6 +1327,9 @@ function getChannelPager(context) {
                             }
                         }
                     }
+                    pageInfo {
+                        hasNextPage
+                    }
                 }
             }
         }`
@@ -1309,19 +1355,17 @@ function getChannelPager(context) {
         gql = gql.filter(g => g.operationName != gqlClipOperationName)
     }
 
-    const response = callGQL(gql)
+    const response = callGQL(gql, false, true, true)
 
-    let videosJson = [];
-    let clipsJson = [];
+    let videosJson = null;
+    let clipsJson = null;
     
     if(context.videosHasNext) {
-        const index = response.findIndex(e => e.extensions.operationName == gqlVideoOperationName);
-        videosJson = response[index];
+        videosJson = getGQLBatchOperation(response, gqlVideoOperationName, true);
     }
     
     if(context.clipsHasNext) {
-        const index = response.findIndex(e => e.extensions.operationName == gqlClipOperationName);
-        clipsJson = response[index];
+        clipsJson = getGQLBatchOperation(response, gqlClipOperationName, false);
     }
 
     const edges = videosJson?.data?.user?.videos?.edges ?? [];
