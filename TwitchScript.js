@@ -1449,6 +1449,8 @@ function getChannelPager(context) {
                     owner.profileImageURL
                 ),
                 datetime: parseInt(new Date(uploadDate).getTime() / 1000),
+                url: contentUrl,
+                contentThumbnails: new Thumbnails([new Thumbnail(thumbnail, 0)]),
                 lockDescription: 'Subscriber only',
                 unlockUrl: `https://subs.twitch.tv/${owner.login}`,
             });
