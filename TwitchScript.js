@@ -1274,11 +1274,6 @@ function getChannelPager(context) {
                             publishedAt
                             lengthSeconds
                             viewCount
-                            description
-                            game {
-                                id
-                                displayName
-                            }
                             owner {
                                 id
                                 displayName
@@ -1371,10 +1366,9 @@ function getChannelPager(context) {
     const edges = videosJson?.data?.user?.videos?.edges ?? [];
     const clips = clipsJson?.data?.user?.clips?.edges ?? [];
 
-    // Batch-fetch playback tokens for videos to detect subscriber-only and build HLS URLs
+    // Batch-fetch playback tokens for videos to detect subscriber-only VODs
     const videoEdges = edges.filter(e => e?.node?.owner != null);
     const subscriberOnlyIds = new Set();
-    const videoTokens = {};
 
     if (videoEdges.length > 0) {
         const tokenGql = videoEdges.map(edge => ({
@@ -1399,8 +1393,6 @@ function getChannelPager(context) {
                     const videoId = videoEdges[i].node.id;
                     if (isRestrictedToSubscriberOnly(token)) {
                         subscriberOnlyIds.add(videoId);
-                    } else {
-                        videoTokens[videoId] = token;
                     }
                 }
             }
@@ -1453,27 +1445,8 @@ function getChannelPager(context) {
             });
         }
 
-        // Return PlatformVideoDetails with HLS source if we have the playback token
-        const token = videoTokens[edge.node.id];
-        if (token && edge.node.__typename !== 'Clip') {
-            return buildVodVideoDetails({
-                id: edge.node.id,
-                title: edge.node.title,
-                thumbnail: thumbnail,
-                ownerId: owner.id,
-                ownerDisplayName: owner.displayName,
-                ownerLogin: owner.login,
-                ownerProfileImageURL: owner.profileImageURL,
-                uploadDate: uploadDate,
-                duration: duration,
-                viewCount: edge.node.viewCount,
-                url: contentUrl,
-                description: edge.node.description,
-                hlsUrl: buildVodHlsUrl(edge.node.id, token.signature, token.value),
-                game: edge.node.game,
-            });
-        }
-
+        // Must stay plain PlatformVideo: the desktop subscription cache cannot round-trip
+        // PlatformVideoDetails, and its embedded playback token expires in 20h anyway
         return new PlatformVideo({
             id: new PlatformID(PLATFORM, edge.node.id, config.id),
             name: edge.node.title,
