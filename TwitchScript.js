@@ -504,7 +504,8 @@ function getClippedVideo(url) {
     .join('\n ');
 
     const result = new PlatformVideoDetails({
-        id: new PlatformID(PLATFORM, clipSlug, config.id),
+        // Numeric clip id, matching the id channel feeds emit for the same clip
+        id: new PlatformID(PLATFORM, clip.id, config.id),
         name: clip.title,
         thumbnails: new Thumbnails([new Thumbnail(clip.thumbnailURL, 0)]),
         author: new PlatformAuthorLink(
