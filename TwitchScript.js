@@ -123,6 +123,10 @@ source.getHome = function () {
     return getHomePagerPopular({ cursor: null, page_size: 20 })
 }
 source.searchSuggestions = function (query) {
+    // Twitch answers an empty query fragment with a service error; there is nothing to suggest
+    if (!query || query.trim() === '') {
+        return []
+    }
     const gql = {
         query: 'query SearchTray_SearchSuggestions($queryFragment: String! $requestID: ID $withOfflineChannelContent: Boolean) { searchSuggestions(queryFragment: $queryFragment requestID: $requestID withOfflineChannelContent: $withOfflineChannelContent){ edges { ...searchSuggestionNode } tracking { modelTrackingID responseID } } } fragment searchSuggestionNode on SearchSuggestionEdge { node { content { __typename ... on SearchSuggestionChannel { id isLive isVerified login profileImageURL(width: 50) user { id stream { id game { id } } } } ... on SearchSuggestionCategory { id boxArtURL(width: 30 height: 40) } } matchingCharacters { start end } id text } }',
         operationName: 'SearchTray_SearchSuggestions',
@@ -142,7 +146,7 @@ source.getSearchCapabilities = () => {
     return { types: [Type.Feed.Mixed], sorts: [], filters: [] }
 }
 source.search = function (query, type, order, filters) {
-    return getSearchPagerAll({ q: query })
+    return getSearchPagerAll({ q: query, page_size: 20, cursor: null })
 }
 source.searchChannels = function (query) {
     return getSearchPagerChannels({ q: query, page_size: 20, results_returned: 0, cursor: null })
@@ -247,7 +251,16 @@ source.getChannel = function (url) {
     })
 }
 source.getChannelContents = function (url) {
-    return getChannelPager({ url, page_size: 20, VideoCursor: null })
+    return getChannelPager({
+        url,
+        page_size: 20,
+        VideoCursor: null,
+        ClipCursor: null,
+        videosHasNext: true,
+        clipsHasNext: true,
+        clipsErrors: 0,
+        isFirstPage: true,
+    })
 }
 
 source.getChannelTemplateByClaimMap = () => {
@@ -491,7 +504,8 @@ function getClippedVideo(url) {
     .join('\n ');
 
     const result = new PlatformVideoDetails({
-        id: new PlatformID(PLATFORM, clipSlug, config.id),
+        // Numeric clip id, matching the id channel feeds emit for the same clip
+        id: new PlatformID(PLATFORM, clip.id, config.id),
         name: clip.title,
         thumbnails: new Thumbnails([new Thumbnail(clip.thumbnailURL, 0)]),
         author: new PlatformAuthorLink(
@@ -1059,10 +1073,11 @@ function parseEmojiMessage(channelName, msg) {
  * @param {Object} gql the gql query object to be stringified and sent
  * @param {boolean} use_authenticated if true, will use the authenticated headers
  * @param {boolean} parse if true, will parse the response as json and check for errors
+ * @param {boolean} allow_partial_errors if true, return batched responses with per-operation errors
  * @returns {string | Object} the response body as a string or the parsed json object
  * @throws {ScriptException}
  */
-function callGQL(gql, use_authenticated = false, parse = true) {
+function callGQL(gql, use_authenticated = false, parse = true, allow_partial_errors = false) {
     const resp = webclient.POST(
         GQL_URL,
         JSON.stringify(gql),
@@ -1074,24 +1089,69 @@ function callGQL(gql, use_authenticated = false, parse = true) {
 
     if (!parse) return resp.body
 
-    const json = JSON.parse(resp.body)
+    return validateGQLResponse(JSON.parse(resp.body), allow_partial_errors)
+}
+
+/**
+ * Validates parsed GraphQL response data.
+ * @param {Object | Object[]} json parsed GraphQL response
+ * @param {boolean} allow_partial_errors if true, return responses with per-operation errors instead of throwing
+ * @returns {Object | Object[]} the validated response
+ * @throws {ScriptException}
+ */
+function validateGQLResponse(json, allow_partial_errors = false) {
+    const isBatch = Array.isArray(json)
 
     // check for errors in the case of different lengths cause json can be array or single object
-    if (!json.length && json.errors) {
+    if (!isBatch && json.errors) {
         trace(`GQL errors: ${JSON.stringify(json.errors)}`);
-        throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`);
+        if (!allow_partial_errors) {
+            throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`);
+        }
     }
 
-    if (json.length) {
+    if (isBatch) {
         for (const obj of json) {
-            if (obj.errors) {
+            if (obj?.errors) {
                 trace(`GQL errors on ${obj.extensions?.operationName ?? 'unknown'}: ${JSON.stringify(obj.errors)}`);
-                throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`);
+                if (!allow_partial_errors) {
+                    throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`);
+                }
             }
         }
     }
 
     return json
+}
+
+/**
+ * Gets one operation from a batched GraphQL response.
+ * @param {Object[]} response batched GraphQL response
+ * @param {string} operationName operation to find
+ * @param {boolean} required if true, throw when the operation is missing or errored
+ * @returns {Object | null} the successful operation response, or null for an unavailable optional operation
+ * @throws {ScriptException}
+ */
+function getGQLBatchOperation(response, operationName, required) {
+    const entries = Array.isArray(response) ? response : [response]
+    const operation = entries.find(entry => entry?.extensions?.operationName === operationName)
+
+    if (!operation) {
+        if (required) {
+            throw new ScriptException(`GQL response missing required operation: ${operationName}`)
+        }
+        trace(`GQL response missing optional operation: ${operationName}`)
+        return null
+    }
+
+    if (operation.errors) {
+        if (required) {
+            throw new ScriptException(`GQL returned errors: ${JSON.stringify(operation.errors)}`)
+        }
+        return null
+    }
+
+    return operation
 }
 
 //* Pagers
@@ -1231,11 +1291,7 @@ function getChannelPager(context) {
                             publishedAt
                             lengthSeconds
                             viewCount
-                            description
-                            game {
-                                id
-                                displayName
-                            }
+                            status
                             owner {
                                 id
                                 displayName
@@ -1284,18 +1340,14 @@ function getChannelPager(context) {
                             }
                         }
                     }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
                 }
             }
         }`
     }]
-
-    if(context.videosHasNext === undefined) {
-        context.videosHasNext = true;
-    }
-
-    if(context.clipsHasNext === undefined) {
-        context.clipsHasNext = true;
-    }
 
     if(_settings.shouldIncludeChannelClips === false) {
         context.clipsHasNext = false;
@@ -1309,28 +1361,26 @@ function getChannelPager(context) {
         gql = gql.filter(g => g.operationName != gqlClipOperationName)
     }
 
-    const response = callGQL(gql)
+    const response = callGQL(gql, false, true, true)
 
-    let videosJson = [];
-    let clipsJson = [];
+    let videosJson = null;
+    let clipsJson = null;
     
     if(context.videosHasNext) {
-        const index = response.findIndex(e => e.extensions.operationName == gqlVideoOperationName);
-        videosJson = response[index];
+        videosJson = getGQLBatchOperation(response, gqlVideoOperationName, true);
     }
     
+    // Clips are optional: Twitch's clips backend intermittently returns per-operation service errors
     if(context.clipsHasNext) {
-        const index = response.findIndex(e => e.extensions.operationName == gqlClipOperationName);
-        clipsJson = response[index];
+        clipsJson = getGQLBatchOperation(response, gqlClipOperationName, false);
     }
 
     const edges = videosJson?.data?.user?.videos?.edges ?? [];
     const clips = clipsJson?.data?.user?.clips?.edges ?? [];
 
-    // Batch-fetch playback tokens for videos to detect subscriber-only and build HLS URLs
+    // Batch-fetch playback tokens for videos to detect subscriber-only VODs
     const videoEdges = edges.filter(e => e?.node?.owner != null);
     const subscriberOnlyIds = new Set();
-    const videoTokens = {};
 
     if (videoEdges.length > 0) {
         const tokenGql = videoEdges.map(edge => ({
@@ -1347,21 +1397,25 @@ function getChannelPager(context) {
         }));
 
         try {
-            const tokenResponses = callGQL(tokenGql, true);
+            const tokenResponses = callGQL(tokenGql, true, true, true);
             const responses = Array.isArray(tokenResponses) ? tokenResponses : [tokenResponses];
-            for (let i = 0; i < responses.length; i++) {
-                const token = responses[i]?.data?.videoPlaybackAccessToken;
-                if (token) {
-                    const videoId = videoEdges[i].node.id;
+            // Match tokens by their embedded vod_id so detection does not depend on batch order
+            for (const tokenResponse of responses) {
+                const token = tokenResponse?.data?.videoPlaybackAccessToken;
+                if (!token) {
+                    continue;
+                }
+                try {
+                    const vodId = String(JSON.parse(token.value).vod_id);
                     if (isRestrictedToSubscriberOnly(token)) {
-                        subscriberOnlyIds.add(videoId);
-                    } else {
-                        videoTokens[videoId] = token;
+                        subscriberOnlyIds.add(vodId);
                     }
+                } catch (error) {
+                    trace(`Unreadable playback token: ${error}`);
                 }
             }
-        } catch (e) {
-            log('Failed to check subscriber-only status: ' + e);
+        } catch (error) {
+            trace('Failed to check subscriber-only status: ' + error);
         }
     }
 
@@ -1404,32 +1458,15 @@ function getChannelPager(context) {
                     owner.profileImageURL
                 ),
                 datetime: parseInt(new Date(uploadDate).getTime() / 1000),
+                url: contentUrl,
+                contentThumbnails: new Thumbnails([new Thumbnail(thumbnail, 0)]),
                 lockDescription: 'Subscriber only',
                 unlockUrl: `https://subs.twitch.tv/${owner.login}`,
             });
         }
 
-        // Return PlatformVideoDetails with HLS source if we have the playback token
-        const token = videoTokens[edge.node.id];
-        if (token && edge.node.__typename !== 'Clip') {
-            return buildVodVideoDetails({
-                id: edge.node.id,
-                title: edge.node.title,
-                thumbnail: thumbnail,
-                ownerId: owner.id,
-                ownerDisplayName: owner.displayName,
-                ownerLogin: owner.login,
-                ownerProfileImageURL: owner.profileImageURL,
-                uploadDate: uploadDate,
-                duration: duration,
-                viewCount: edge.node.viewCount,
-                url: contentUrl,
-                description: edge.node.description,
-                hlsUrl: buildVodHlsUrl(edge.node.id, token.signature, token.value),
-                game: edge.node.game,
-            });
-        }
-
+        // Must stay plain PlatformVideo: the desktop subscription cache cannot round-trip
+        // PlatformVideoDetails, and its embedded playback token expires in 20h anyway
         return new PlatformVideo({
             id: new PlatformID(PLATFORM, edge.node.id, config.id),
             name: edge.node.title,
@@ -1448,28 +1485,46 @@ function getChannelPager(context) {
         })
     })
 
-    if (context.VideoCursor === null) {
+    if (context.isFirstPage) {
         // get the currently live stream
         try {
             const current_stream = getLiveVideo(BASE_URL + login, false)
-            // remove first video
-            videos = videos.slice(1)
+            // Replace the in-progress archive of the live broadcast, only if it is present and survived the filter
+            const liveArchiveId = edges[0]?.node?.status === 'RECORDING' ? edges[0].node.id : null
+            if (videos.length > 0 && videos[0].id.value === liveArchiveId) {
+                videos = videos.slice(1)
+            }
             videos.unshift(current_stream)
-        } catch (e) {
-            log(e)
+        } catch (error) {
+            trace(`Live stream lookup failed for ${login}: ${error}`)
         }
+        context.isFirstPage = false;
     }
 
-    if (edges.length > 0) {
-        context.VideoCursor = edges[edges.length - 1].cursor
+    const videosEndCursor = edges[edges.length - 1]?.cursor ?? null
+    // The videos query exposes no endCursor, so a page without a fresh edge cursor cannot advance
+    const videosCursorStuck = videosJson !== null && (videosEndCursor === null || videosEndCursor === context.VideoCursor)
+    if (videosEndCursor !== null) {
+        context.VideoCursor = videosEndCursor
     }
 
-    if (clips.length > 0) {
-        context.ClipCursor = clips[clips.length - 1].cursor
+    const clipsEndCursor = clipsJson?.data?.user?.clips?.pageInfo?.endCursor ?? clips[clips.length - 1]?.cursor ?? null
+    // A successful clips page whose cursor did not advance would reissue the same request forever
+    const clipsCursorStuck = clipsJson !== null && (clipsEndCursor === null || clipsEndCursor === context.ClipCursor)
+    if (clipsEndCursor !== null) {
+        context.ClipCursor = clipsEndCursor
     }
-       
-    context.videosHasNext = videosJson?.data?.user?.videos?.pageInfo?.hasNextPage ?? false;
-    context.clipsHasNext = clipsJson?.data?.user?.clips?.pageInfo?.hasNextPage ?? false;
+
+    context.videosHasNext = !videosCursorStuck && (videosJson?.data?.user?.videos?.pageInfo?.hasNextPage ?? false);
+    if (clipsJson) {
+        context.clipsErrors = 0;
+        // Twitch keeps advertising clips while its discovery filter removes every one of them
+        context.clipsHasNext = clips.length > 0 && !clipsCursorStuck && (clipsJson.data?.user?.clips?.pageInfo?.hasNextPage ?? false);
+    } else if (context.clipsHasNext) {
+        // Transient clips errors get a bounded retry instead of ending the feed
+        context.clipsErrors += 1;
+        context.clipsHasNext = context.clipsErrors <= 2;
+    }
     const hasNext = context.videosHasNext || context.clipsHasNext;
 
     return new ChannelVideoPager(context, videos, hasNext)
@@ -1478,15 +1533,19 @@ function getChannelPager(context) {
 /**
  * Gets a search pager
  * @param {import("./types.d.ts").SearchContext} context the query params
- * @returns {(PlatformVideo | PlatformChannel)[]} returns the search pager
+ * @returns {SearchPagerAll} returns the search pager
  * @throws {ScriptException}
  */
 function getSearchPagerAll(context) {
+    // First page is a mixed query; later pages continue the videos section via a VOD-target cursor.
+    const isContinuation = context.cursor != null
     const gql = {
         operationName: 'SearchResultsPage_SearchResults',
         variables: {
             query: context.q,
-            options: null,
+            options: isContinuation
+                ? { targets: [{ index: 'VOD', limit: context.page_size, cursor: context.cursor }] }
+                : null,
             requestID: '',
         },
         query: 'query SearchResultsPage_SearchResults( $query: String! $options: SearchForOptions $requestID: ID ) { searchFor( userQuery: $query platform: "web" options: $options requestID: $requestID ) { channels { ...searchForChannelsFragment } channelsWithTag { ...searchForChannelsWithTagFragment } games { ...searchForGamesFragment } videos { ...searchForVideosFragment } relatedLiveChannels { ...relatedLiveChannelsFragment } } } fragment relatedLiveChannelsFragment on SearchForResultRelatedLiveChannels { edges { trackingID item { ...searchRelatedLiveChannelFragment } } score } fragment searchForGamesFragment on SearchForResultGames { cursor edges { trackingID item { ...searchForGameFragment ...searchForVideoFragment ...searchForUserFragment } } score totalMatches } fragment searchForChannelsFragment on SearchForResultUsers { cursor edges { trackingID item { ...searchForUserFragment ...searchForVideoFragment ...searchForGameFragment } } score totalMatches } fragment searchForChannelsWithTagFragment on SearchForResultUsers { cursor edges { trackingID item { ...searchForUserFragment ...searchForVideoFragment ...searchForGameFragment } } score totalMatches } fragment searchForVideosFragment on SearchForResultVideos { cursor edges { trackingID item { ...searchForVideoFragment ...searchForUserFragment ...searchForGameFragment } } score totalMatches } fragment searchRelatedLiveChannelFragment on User { id stream { id viewersCount previewImageURL(height: 112 width: 200) game { name id } broadcaster { id primaryColorHex login displayName broadcastSettings { id title } roles { isPartner } } } watchParty { session { id contentRestriction } } } fragment searchForGameFragment on Game { id name displayName boxArtURL(height: 120 width: 90) tags(tagType: CONTENT) { id } viewersCount } fragment searchForScheduleSegmentFragment on ScheduleSegment { id startAt endAt title hasReminder categories { id name } } fragment searchForUserFragment on User { broadcastSettings { id title } displayName followers { totalCount } id lastBroadcast { id startedAt } login profileImageURL(width: 150) description channel { id schedule { id nextSegment { ...searchForScheduleSegmentFragment } } } self { canFollow follower { disableNotifications } } latestVideo: videos(first: 1 sort: TIME type: ARCHIVE) { edges { node { ...searchForFeaturedVideoFragment } } } topClip: clips(first: 1 criteria: { sort: VIEWS_DESC }) { edges { node { ...searchForFeaturedClipFragment } } } roles { isPartner } stream { game { id name displayName } id previewImageURL(height: 120 width: 214) freeformTags { id } type viewersCount } watchParty { session { id contentRestriction } } } fragment searchForFeaturedVideoFragment on Video { id lengthSeconds title previewThumbnailURL(width: 100 height: 56) } fragment searchForFeaturedClipFragment on Clip { id title durationSeconds thumbnailURL slug } fragment searchForVideoFragment on Video { createdAt owner { id displayName login roles { isPartner } } id game { id name displayName } lengthSeconds previewThumbnailURL(height: 120 width: 214) title viewCount }',
@@ -1500,29 +1559,32 @@ function getSearchPagerAll(context) {
     /** @type {PlatformVideo[]} */
     const results = []
 
-    for (const e of sf.channels.edges) {
-        if (e.item.stream !== null) {
-            results.push(searchTaggedToPlatformVideo(e.item))
+    if (!isContinuation) {
+        for (const edge of sf.channels.edges) {
+            if (edge.item.stream !== null) {
+                results.push(searchTaggedToPlatformVideo(edge.item))
+            }
+        }
+
+        for (const edge of sf.channelsWithTag.edges) {
+            results.push(searchTaggedToPlatformVideo(edge.item))
+        }
+
+        for (const edge of sf.relatedLiveChannels.edges) {
+            results.push(searchLiveToPlatformVideo(edge.item))
         }
     }
 
-    for (const e of sf.channelsWithTag.edges) {
-        results.push(searchTaggedToPlatformVideo(e.item))
+    for (const edge of sf.videos?.edges ?? []) {
+        results.push(searchVideoToPlatformVideo(edge.item))
     }
 
-    // for (const e of sf.channels.edges) {
-    //   results.push(searchTaggedToPlatformVideo(e.item))
-    // }
+    const nextCursor = sf.videos?.cursor ?? null
+    // A cursor that did not advance would replay the same page forever
+    const hasNextPage = Boolean(nextCursor) && nextCursor !== context.cursor && (sf.videos?.edges?.length ?? 0) > 0
+    context.cursor = nextCursor
 
-    for (const e of sf.relatedLiveChannels.edges) {
-        results.push(searchLiveToPlatformVideo(e.item))
-    }
-
-    for (const e of sf.videos.edges) {
-        results.push(searchVideoToPlatformVideo(e.item))
-    }
-
-    return new SearchPagerAll(context, results)
+    return new SearchPagerAll(context, results, hasNextPage)
 }
 
 /**
@@ -1597,13 +1659,14 @@ class SearchPagerAll extends VideoPager {
     /**
      * @param {import("./types.d.ts").SearchContext} context the query params
      * @param {(PlatformVideo | PlatformChannel)[]} results the initial results
+     * @param {boolean} hasNextPage if more video results can be loaded
      */
-    constructor(context, results) {
-        super(results, false, context)
+    constructor(context, results, hasNextPage) {
+        super(results, hasNextPage, context)
     }
 
     nextPage() {
-        return null
+        return getSearchPagerAll(this.context)
     }
 }
 

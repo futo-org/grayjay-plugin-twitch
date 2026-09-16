@@ -790,8 +790,8 @@ export type PagerBaseContext = {
 export type SearchContext = {
     q: string
     page_size: number
-    cursor?: string
-    results_returned: number
+    cursor?: string | null
+    results_returned?: number
 }
 
 export type HomeContext = {
@@ -803,6 +803,12 @@ export type URLContext = {
     url: string
     page_size: number
     cursor?: string
+    VideoCursor: string | null
+    ClipCursor: string | null
+    videosHasNext: boolean
+    clipsHasNext: boolean
+    clipsErrors: number
+    isFirstPage: boolean
 }
 
 export type LiveEventsContext = {
