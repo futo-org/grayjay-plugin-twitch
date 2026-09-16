@@ -254,6 +254,7 @@ source.getChannelContents = function (url) {
         ClipCursor: null,
         videosHasNext: true,
         clipsHasNext: true,
+        clipsErrors: 0,
         isFirstPage: true,
     })
 }
@@ -1336,6 +1337,7 @@ function getChannelPager(context) {
                     }
                     pageInfo {
                         hasNextPage
+                        endCursor
                     }
                 }
             }
@@ -1363,6 +1365,7 @@ function getChannelPager(context) {
         videosJson = getGQLBatchOperation(response, gqlVideoOperationName, true);
     }
     
+    // Clips are optional: Twitch's clips backend intermittently returns per-operation service errors
     if(context.clipsHasNext) {
         clipsJson = getGQLBatchOperation(response, gqlClipOperationName, false);
     }
@@ -1497,12 +1500,22 @@ function getChannelPager(context) {
         context.VideoCursor = edges[edges.length - 1].cursor
     }
 
-    if (clips.length > 0) {
-        context.ClipCursor = clips[clips.length - 1].cursor
+    const clipsEndCursor = clipsJson?.data?.user?.clips?.pageInfo?.endCursor ?? clips[clips.length - 1]?.cursor ?? null
+    // A successful clips page whose cursor did not advance would reissue the same request forever
+    const clipsCursorStuck = clipsJson !== null && (clipsEndCursor === null || clipsEndCursor === context.ClipCursor)
+    if (clipsEndCursor !== null) {
+        context.ClipCursor = clipsEndCursor
     }
-       
+
     context.videosHasNext = videosJson?.data?.user?.videos?.pageInfo?.hasNextPage ?? false;
-    context.clipsHasNext = clipsJson?.data?.user?.clips?.pageInfo?.hasNextPage ?? false;
+    if (clipsJson) {
+        context.clipsErrors = 0;
+        context.clipsHasNext = !clipsCursorStuck && (clipsJson.data?.user?.clips?.pageInfo?.hasNextPage ?? false);
+    } else if (context.clipsHasNext) {
+        // Transient clips errors get a bounded retry instead of ending the feed
+        context.clipsErrors += 1;
+        context.clipsHasNext = context.clipsErrors <= 2;
+    }
     const hasNext = context.videosHasNext || context.clipsHasNext;
 
     return new ChannelVideoPager(context, videos, hasNext)

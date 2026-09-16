@@ -807,6 +807,7 @@ export type URLContext = {
     ClipCursor: string | null
     videosHasNext: boolean
     clipsHasNext: boolean
+    clipsErrors: number
     isFirstPage: boolean
 }
 
