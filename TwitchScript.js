@@ -1501,8 +1501,11 @@ function getChannelPager(context) {
         context.isFirstPage = false;
     }
 
-    if (edges.length > 0) {
-        context.VideoCursor = edges[edges.length - 1].cursor
+    const videosEndCursor = edges[edges.length - 1]?.cursor ?? null
+    // The videos query exposes no endCursor, so a page without a fresh edge cursor cannot advance
+    const videosCursorStuck = videosJson !== null && (videosEndCursor === null || videosEndCursor === context.VideoCursor)
+    if (videosEndCursor !== null) {
+        context.VideoCursor = videosEndCursor
     }
 
     const clipsEndCursor = clipsJson?.data?.user?.clips?.pageInfo?.endCursor ?? clips[clips.length - 1]?.cursor ?? null
@@ -1512,10 +1515,11 @@ function getChannelPager(context) {
         context.ClipCursor = clipsEndCursor
     }
 
-    context.videosHasNext = videosJson?.data?.user?.videos?.pageInfo?.hasNextPage ?? false;
+    context.videosHasNext = !videosCursorStuck && (videosJson?.data?.user?.videos?.pageInfo?.hasNextPage ?? false);
     if (clipsJson) {
         context.clipsErrors = 0;
-        context.clipsHasNext = !clipsCursorStuck && (clipsJson.data?.user?.clips?.pageInfo?.hasNextPage ?? false);
+        // Twitch keeps advertising clips while its discovery filter removes every one of them
+        context.clipsHasNext = clips.length > 0 && !clipsCursorStuck && (clipsJson.data?.user?.clips?.pageInfo?.hasNextPage ?? false);
     } else if (context.clipsHasNext) {
         // Transient clips errors get a bounded retry instead of ending the feed
         context.clipsErrors += 1;
