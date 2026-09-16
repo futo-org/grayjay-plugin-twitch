@@ -790,8 +790,8 @@ export type PagerBaseContext = {
 export type SearchContext = {
     q: string
     page_size: number
-    cursor?: string
-    results_returned: number
+    cursor?: string | null
+    results_returned?: number
 }
 
 export type HomeContext = {

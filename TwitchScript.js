@@ -142,7 +142,7 @@ source.getSearchCapabilities = () => {
     return { types: [Type.Feed.Mixed], sorts: [], filters: [] }
 }
 source.search = function (query, type, order, filters) {
-    return getSearchPagerAll({ q: query })
+    return getSearchPagerAll({ q: query, page_size: 20, cursor: null })
 }
 source.searchChannels = function (query) {
     return getSearchPagerChannels({ q: query, page_size: 20, results_returned: 0, cursor: null })
@@ -1524,15 +1524,19 @@ function getChannelPager(context) {
 /**
  * Gets a search pager
  * @param {import("./types.d.ts").SearchContext} context the query params
- * @returns {(PlatformVideo | PlatformChannel)[]} returns the search pager
+ * @returns {SearchPagerAll} returns the search pager
  * @throws {ScriptException}
  */
 function getSearchPagerAll(context) {
+    // First page is a mixed query; later pages continue the videos section via a VOD-target cursor.
+    const isContinuation = context.cursor != null
     const gql = {
         operationName: 'SearchResultsPage_SearchResults',
         variables: {
             query: context.q,
-            options: null,
+            options: isContinuation
+                ? { targets: [{ index: 'VOD', limit: context.page_size, cursor: context.cursor }] }
+                : null,
             requestID: '',
         },
         query: 'query SearchResultsPage_SearchResults( $query: String! $options: SearchForOptions $requestID: ID ) { searchFor( userQuery: $query platform: "web" options: $options requestID: $requestID ) { channels { ...searchForChannelsFragment } channelsWithTag { ...searchForChannelsWithTagFragment } games { ...searchForGamesFragment } videos { ...searchForVideosFragment } relatedLiveChannels { ...relatedLiveChannelsFragment } } } fragment relatedLiveChannelsFragment on SearchForResultRelatedLiveChannels { edges { trackingID item { ...searchRelatedLiveChannelFragment } } score } fragment searchForGamesFragment on SearchForResultGames { cursor edges { trackingID item { ...searchForGameFragment ...searchForVideoFragment ...searchForUserFragment } } score totalMatches } fragment searchForChannelsFragment on SearchForResultUsers { cursor edges { trackingID item { ...searchForUserFragment ...searchForVideoFragment ...searchForGameFragment } } score totalMatches } fragment searchForChannelsWithTagFragment on SearchForResultUsers { cursor edges { trackingID item { ...searchForUserFragment ...searchForVideoFragment ...searchForGameFragment } } score totalMatches } fragment searchForVideosFragment on SearchForResultVideos { cursor edges { trackingID item { ...searchForVideoFragment ...searchForUserFragment ...searchForGameFragment } } score totalMatches } fragment searchRelatedLiveChannelFragment on User { id stream { id viewersCount previewImageURL(height: 112 width: 200) game { name id } broadcaster { id primaryColorHex login displayName broadcastSettings { id title } roles { isPartner } } } watchParty { session { id contentRestriction } } } fragment searchForGameFragment on Game { id name displayName boxArtURL(height: 120 width: 90) tags(tagType: CONTENT) { id } viewersCount } fragment searchForScheduleSegmentFragment on ScheduleSegment { id startAt endAt title hasReminder categories { id name } } fragment searchForUserFragment on User { broadcastSettings { id title } displayName followers { totalCount } id lastBroadcast { id startedAt } login profileImageURL(width: 150) description channel { id schedule { id nextSegment { ...searchForScheduleSegmentFragment } } } self { canFollow follower { disableNotifications } } latestVideo: videos(first: 1 sort: TIME type: ARCHIVE) { edges { node { ...searchForFeaturedVideoFragment } } } topClip: clips(first: 1 criteria: { sort: VIEWS_DESC }) { edges { node { ...searchForFeaturedClipFragment } } } roles { isPartner } stream { game { id name displayName } id previewImageURL(height: 120 width: 214) freeformTags { id } type viewersCount } watchParty { session { id contentRestriction } } } fragment searchForFeaturedVideoFragment on Video { id lengthSeconds title previewThumbnailURL(width: 100 height: 56) } fragment searchForFeaturedClipFragment on Clip { id title durationSeconds thumbnailURL slug } fragment searchForVideoFragment on Video { createdAt owner { id displayName login roles { isPartner } } id game { id name displayName } lengthSeconds previewThumbnailURL(height: 120 width: 214) title viewCount }',
@@ -1546,29 +1550,32 @@ function getSearchPagerAll(context) {
     /** @type {PlatformVideo[]} */
     const results = []
 
-    for (const e of sf.channels.edges) {
-        if (e.item.stream !== null) {
-            results.push(searchTaggedToPlatformVideo(e.item))
+    if (!isContinuation) {
+        for (const edge of sf.channels.edges) {
+            if (edge.item.stream !== null) {
+                results.push(searchTaggedToPlatformVideo(edge.item))
+            }
+        }
+
+        for (const edge of sf.channelsWithTag.edges) {
+            results.push(searchTaggedToPlatformVideo(edge.item))
+        }
+
+        for (const edge of sf.relatedLiveChannels.edges) {
+            results.push(searchLiveToPlatformVideo(edge.item))
         }
     }
 
-    for (const e of sf.channelsWithTag.edges) {
-        results.push(searchTaggedToPlatformVideo(e.item))
+    for (const edge of sf.videos?.edges ?? []) {
+        results.push(searchVideoToPlatformVideo(edge.item))
     }
 
-    // for (const e of sf.channels.edges) {
-    //   results.push(searchTaggedToPlatformVideo(e.item))
-    // }
+    const nextCursor = sf.videos?.cursor ?? null
+    // A cursor that did not advance would replay the same page forever
+    const hasNextPage = Boolean(nextCursor) && nextCursor !== context.cursor && (sf.videos?.edges?.length ?? 0) > 0
+    context.cursor = nextCursor
 
-    for (const e of sf.relatedLiveChannels.edges) {
-        results.push(searchLiveToPlatformVideo(e.item))
-    }
-
-    for (const e of sf.videos.edges) {
-        results.push(searchVideoToPlatformVideo(e.item))
-    }
-
-    return new SearchPagerAll(context, results)
+    return new SearchPagerAll(context, results, hasNextPage)
 }
 
 /**
@@ -1643,13 +1650,14 @@ class SearchPagerAll extends VideoPager {
     /**
      * @param {import("./types.d.ts").SearchContext} context the query params
      * @param {(PlatformVideo | PlatformChannel)[]} results the initial results
+     * @param {boolean} hasNextPage if more video results can be loaded
      */
-    constructor(context, results) {
-        super(results, false, context)
+    constructor(context, results, hasNextPage) {
+        super(results, hasNextPage, context)
     }
 
     nextPage() {
-        return null
+        return getSearchPagerAll(this.context)
     }
 }
 
