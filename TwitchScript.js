@@ -1285,6 +1285,7 @@ function getChannelPager(context) {
                             publishedAt
                             lengthSeconds
                             viewCount
+                            status
                             owner {
                                 id
                                 displayName
@@ -1480,8 +1481,11 @@ function getChannelPager(context) {
         // get the currently live stream
         try {
             const current_stream = getLiveVideo(BASE_URL + login, false)
-            // remove first video
-            videos = videos.slice(1)
+            // Replace the in-progress archive of the live broadcast, only if it is present and survived the filter
+            const liveArchiveId = edges[0]?.node?.status === 'RECORDING' ? edges[0].node.id : null
+            if (videos.length > 0 && videos[0].id.value === liveArchiveId) {
+                videos = videos.slice(1)
+            }
             videos.unshift(current_stream)
         } catch (error) {
             trace(`Live stream lookup failed for ${login}: ${error}`)
