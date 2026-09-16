@@ -1081,7 +1081,7 @@ function callGQL(gql, use_authenticated = false, parse = true, allow_partial_err
 /**
  * Validates parsed GraphQL response data.
  * @param {Object | Object[]} json parsed GraphQL response
- * @param {boolean} allow_partial_errors if true, preserve batched responses with per-operation errors
+ * @param {boolean} allow_partial_errors if true, return responses with per-operation errors instead of throwing
  * @returns {Object | Object[]} the validated response
  * @throws {ScriptException}
  */
@@ -1091,12 +1091,14 @@ function validateGQLResponse(json, allow_partial_errors = false) {
     // check for errors in the case of different lengths cause json can be array or single object
     if (!isBatch && json.errors) {
         trace(`GQL errors: ${JSON.stringify(json.errors)}`);
-        throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`);
+        if (!allow_partial_errors) {
+            throw new ScriptException(`GQL returned errors: ${JSON.stringify(json.errors)}`);
+        }
     }
 
     if (isBatch) {
         for (const obj of json) {
-            if (obj.errors) {
+            if (obj?.errors) {
                 trace(`GQL errors on ${obj.extensions?.operationName ?? 'unknown'}: ${JSON.stringify(obj.errors)}`);
                 if (!allow_partial_errors) {
                     throw new ScriptException(`GQL returned errors: ${JSON.stringify(obj.errors)}`);
@@ -1117,7 +1119,8 @@ function validateGQLResponse(json, allow_partial_errors = false) {
  * @throws {ScriptException}
  */
 function getGQLBatchOperation(response, operationName, required) {
-    const operation = response.find(e => e?.extensions?.operationName === operationName)
+    const entries = Array.isArray(response) ? response : [response]
+    const operation = entries.find(entry => entry?.extensions?.operationName === operationName)
 
     if (!operation) {
         if (required) {
