@@ -247,7 +247,15 @@ source.getChannel = function (url) {
     })
 }
 source.getChannelContents = function (url) {
-    return getChannelPager({ url, page_size: 20, VideoCursor: null })
+    return getChannelPager({
+        url,
+        page_size: 20,
+        VideoCursor: null,
+        ClipCursor: null,
+        videosHasNext: true,
+        clipsHasNext: true,
+        isFirstPage: true,
+    })
 }
 
 source.getChannelTemplateByClaimMap = () => {
@@ -1333,14 +1341,6 @@ function getChannelPager(context) {
         }`
     }]
 
-    if(context.videosHasNext === undefined) {
-        context.videosHasNext = true;
-    }
-
-    if(context.clipsHasNext === undefined) {
-        context.clipsHasNext = true;
-    }
-
     if(_settings.shouldIncludeChannelClips === false) {
         context.clipsHasNext = false;
     }
@@ -1476,16 +1476,17 @@ function getChannelPager(context) {
         })
     })
 
-    if (context.VideoCursor === null) {
+    if (context.isFirstPage) {
         // get the currently live stream
         try {
             const current_stream = getLiveVideo(BASE_URL + login, false)
             // remove first video
             videos = videos.slice(1)
             videos.unshift(current_stream)
-        } catch (e) {
-            log(e)
+        } catch (error) {
+            trace(`Live stream lookup failed for ${login}: ${error}`)
         }
+        context.isFirstPage = false;
     }
 
     if (edges.length > 0) {

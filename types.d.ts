@@ -803,6 +803,11 @@ export type URLContext = {
     url: string
     page_size: number
     cursor?: string
+    VideoCursor: string | null
+    ClipCursor: string | null
+    videosHasNext: boolean
+    clipsHasNext: boolean
+    isFirstPage: boolean
 }
 
 export type LiveEventsContext = {
