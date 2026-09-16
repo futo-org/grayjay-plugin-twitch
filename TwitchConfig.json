@@ -117,7 +117,7 @@
 			"Fix: Channel and subscription feeds no longer fail when Twitch's clips request errors, and channel clips keep loading page after page;",
 			"Fix: Channel feeds stop at the end instead of requesting empty pages when a channel hides its clips from discovery;",
 			"Fix: Channel feeds return regular video items, which desktop could not read back from its subscription cache;",
-			"Fix: Live channels show the live entry once and keep their newest video;",
+			"Fix: Live channels keep their newest video in the channel feed;",
 			"Fix: Subscriber-only videos are detected reliably and their feed entries carry their video link and thumbnail;",
 			"Improvement: Search results load more pages instead of stopping after the first;"
 		],
