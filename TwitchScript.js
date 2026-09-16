@@ -1388,19 +1388,25 @@ function getChannelPager(context) {
         }));
 
         try {
-            const tokenResponses = callGQL(tokenGql, true);
+            const tokenResponses = callGQL(tokenGql, true, true, true);
             const responses = Array.isArray(tokenResponses) ? tokenResponses : [tokenResponses];
-            for (let i = 0; i < responses.length; i++) {
-                const token = responses[i]?.data?.videoPlaybackAccessToken;
-                if (token) {
-                    const videoId = videoEdges[i].node.id;
+            // Match tokens by their embedded vod_id so detection does not depend on batch order
+            for (const tokenResponse of responses) {
+                const token = tokenResponse?.data?.videoPlaybackAccessToken;
+                if (!token) {
+                    continue;
+                }
+                try {
+                    const vodId = String(JSON.parse(token.value).vod_id);
                     if (isRestrictedToSubscriberOnly(token)) {
-                        subscriberOnlyIds.add(videoId);
+                        subscriberOnlyIds.add(vodId);
                     }
+                } catch (error) {
+                    trace(`Unreadable playback token: ${error}`);
                 }
             }
-        } catch (e) {
-            log('Failed to check subscriber-only status: ' + e);
+        } catch (error) {
+            trace('Failed to check subscriber-only status: ' + error);
         }
     }
 
