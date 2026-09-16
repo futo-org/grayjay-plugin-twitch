@@ -123,6 +123,10 @@ source.getHome = function () {
     return getHomePagerPopular({ cursor: null, page_size: 20 })
 }
 source.searchSuggestions = function (query) {
+    // Twitch answers an empty query fragment with a service error; there is nothing to suggest
+    if (!query || query.trim() === '') {
+        return []
+    }
     const gql = {
         query: 'query SearchTray_SearchSuggestions($queryFragment: String! $requestID: ID $withOfflineChannelContent: Boolean) { searchSuggestions(queryFragment: $queryFragment requestID: $requestID withOfflineChannelContent: $withOfflineChannelContent){ edges { ...searchSuggestionNode } tracking { modelTrackingID responseID } } } fragment searchSuggestionNode on SearchSuggestionEdge { node { content { __typename ... on SearchSuggestionChannel { id isLive isVerified login profileImageURL(width: 50) user { id stream { id game { id } } } } ... on SearchSuggestionCategory { id boxArtURL(width: 30 height: 40) } } matchingCharacters { start end } id text } }',
         operationName: 'SearchTray_SearchSuggestions',
